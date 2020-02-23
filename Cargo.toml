@@ -5,5 +5,9 @@ authors = ["Srimanta Barua <srimanta.barua1@gmail.com>"]
 edition = "2018"
 
 [dependencies]
+glfw  = "0.35"
+gl = "0.14"
 ropey = "1.1"
 unicode-segmentation = "1.6"
+clap = "2.33"
+euclid = "0.20.7"

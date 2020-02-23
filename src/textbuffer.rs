@@ -10,40 +10,40 @@ use unicode_segmentation::{GraphemeCursor, GraphemeIncomplete};
 
 /// Visible handle to text buffer
 #[derive(Clone)]
-pub(crate) struct TextBuffer {
-    inner: Rc<RefCell<TextBufferInner>>,
+pub(crate) struct Buffer {
+    inner: Rc<RefCell<BufferInner>>,
 }
 
-impl TextBuffer {
+impl Buffer {
     /// Create empty text buffer
-    pub(crate) fn empty() -> TextBuffer {
-        TextBuffer {
-            inner: Rc::new(RefCell::new(TextBufferInner::empty())),
+    pub(crate) fn empty() -> Buffer {
+        Buffer {
+            inner: Rc::new(RefCell::new(BufferInner::empty())),
         }
     }
 
     /// Load buffer contents from file
-    pub(crate) fn from_file(path: &str) -> IOResult<TextBuffer> {
-        TextBufferInner::from_file(path).map(|tbi| TextBuffer {
+    pub(crate) fn from_file(path: &str) -> IOResult<Buffer> {
+        BufferInner::from_file(path).map(|tbi| Buffer {
             inner: Rc::new(RefCell::new(tbi)),
         })
     }
 
     /// Get position indicator at start of line number
-    pub(crate) fn get_pos_at_line(&self, linum: usize) -> TextBufferPos {
+    pub(crate) fn get_pos_at_line(&self, linum: usize) -> BufferPos {
         let inner = &*self.inner.borrow();
         if linum >= inner.data.len_lines() {
             let cidx = inner.data.len_chars();
             let linum = inner.data.char_to_line(cidx);
             let linoff = cidx - inner.data.line_to_char(linum);
-            TextBufferPos {
+            BufferPos {
                 char_idx: cidx,
                 line_num: linum,
                 line_off: linoff,
                 buffer: self,
             }
         } else {
-            TextBufferPos {
+            BufferPos {
                 char_idx: inner.data.line_to_char(linum),
                 line_num: linum,
                 line_off: 0,
@@ -53,19 +53,19 @@ impl TextBuffer {
     }
 
     /// Add cursor at position
-    pub(crate) fn add_cursor_at_pos(&self, pos: &TextBufferPos) -> TextBufferCursor {
+    pub(crate) fn add_cursor_at_pos(&self, pos: &BufferPos) -> BufferCursor {
         let inner = &mut *self.inner.borrow_mut();
         inner.clean_cursors();
         let idx = inner.cursors.binary_search_by_key(&pos.char_idx, |weak| {
             (&*weak.inner.upgrade().unwrap().borrow()).char_idx
         });
         match idx {
-            Ok(idx) => TextBufferCursor {
+            Ok(idx) => BufferCursor {
                 inner: inner.cursors[idx].inner.upgrade().unwrap(),
             },
             Err(idx) => {
-                let ret = TextBufferCursor {
-                    inner: Rc::new(RefCell::new(TextBufferCursorInner {
+                let ret = BufferCursor {
+                    inner: Rc::new(RefCell::new(BufferCursorInner {
                         char_idx: pos.char_idx,
                         line_num: pos.line_num,
                         line_off: pos.line_off,
@@ -73,7 +73,7 @@ impl TextBuffer {
                 };
                 inner.cursors.insert(
                     idx,
-                    TextBufferCursorWeak {
+                    BufferCursorWeak {
                         inner: Rc::downgrade(&ret.inner),
                     },
                 );
@@ -83,7 +83,7 @@ impl TextBuffer {
     }
 
     /// Insert character at given cursor position
-    pub(crate) fn insert_char(&mut self, cursor: &mut TextBufferCursor, c: char) {
+    pub(crate) fn insert_char(&mut self, cursor: &mut BufferCursor, c: char) {
         let b_inner = &mut *self.inner.borrow_mut();
 
         // Insert character
@@ -110,7 +110,7 @@ impl TextBuffer {
                 inner.line_num = b_inner.data.char_to_line(inner.char_idx);
                 inner.line_off = inner.char_idx - b_inner.data.line_to_char(inner.line_num);
                 idx
-            },
+            }
             Err(_) => panic!("cursor not found in buffer"),
         };
         for i in (idx + 1)..b_inner.cursors.len() {
@@ -123,7 +123,7 @@ impl TextBuffer {
     }
 
     /// Insert string at given cursor position
-    pub(crate) fn insert_str(&mut self, cursor: &mut TextBufferCursor, s: &str) {
+    pub(crate) fn insert_str(&mut self, cursor: &mut BufferCursor, s: &str) {
         let b_inner = &mut *self.inner.borrow_mut();
 
         // Get char count
@@ -153,7 +153,7 @@ impl TextBuffer {
                 inner.line_num = b_inner.data.char_to_line(inner.char_idx);
                 inner.line_off = inner.char_idx - b_inner.data.line_to_char(inner.line_num);
                 idx
-            },
+            }
             Err(_) => panic!("cursor not found in buffer"),
         };
         for i in (idx + 1)..b_inner.cursors.len() {
@@ -168,55 +168,56 @@ impl TextBuffer {
 
 /// A cursor into the buffer. The buffer maintains references to all cursors, so they are
 /// updated on editing the buffer
-pub(crate) struct TextBufferCursor {
-    inner: Rc<RefCell<TextBufferCursorInner>>,
+pub(crate) struct BufferCursor {
+    inner: Rc<RefCell<BufferCursorInner>>,
 }
 
-struct TextBufferCursorWeak {
-    inner: Weak<RefCell<TextBufferCursorInner>>,
+struct BufferCursorWeak {
+    inner: Weak<RefCell<BufferCursorInner>>,
 }
 
-struct TextBufferCursorInner {
+struct BufferCursorInner {
     char_idx: usize,
     line_num: usize,
     line_off: usize,
 }
 
 /// A location within a buffer. This is invalidated on editing the buffer
-pub(crate) struct TextBufferPos<'a> {
+pub(crate) struct BufferPos<'a> {
     char_idx: usize,
     line_num: usize,
     line_off: usize,
-    buffer: &'a TextBuffer,
+    buffer: &'a Buffer,
 }
 
-impl<'a> TextBufferPos<'a> {}
+impl<'a> BufferPos<'a> {}
 
 // Actual text storage
-struct TextBufferInner {
+struct BufferInner {
     data: Rope,
-    cursors: Vec<TextBufferCursorWeak>,
+    cursors: Vec<BufferCursorWeak>,
 }
 
-impl TextBufferInner {
+impl BufferInner {
     // Create empty buffer
-    fn empty() -> TextBufferInner {
-        TextBufferInner {
+    fn empty() -> BufferInner {
+        BufferInner {
             data: Rope::new(),
             cursors: Vec::new(),
         }
     }
 
     // Create buffer from file
-    fn from_file(path: &str) -> IOResult<TextBufferInner> {
+    fn from_file(path: &str) -> IOResult<BufferInner> {
         File::open(path)
             .and_then(|f| Rope::from_reader(f))
-            .map(|r| TextBufferInner {
+            .map(|r| BufferInner {
                 data: r,
                 cursors: Vec::new(),
             })
     }
 
+    // TODO: Evaluate if we should do this on demand only
     fn clean_cursors(&mut self) {
         self.cursors.retain(|weak| weak.inner.strong_count() > 0);
     }
@@ -311,7 +312,7 @@ mod tests {
 
     #[test]
     fn empty_buffer() {
-        let mut buffer = TextBuffer::empty();
+        let mut buffer = Buffer::empty();
         let pos0 = buffer.get_pos_at_line(0);
         assert_eq!(pos0.char_idx, 0);
         assert_eq!(pos0.line_num, 0);
@@ -332,4 +333,3 @@ mod tests {
         );
     }
 }
-
