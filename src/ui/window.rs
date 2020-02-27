@@ -4,23 +4,19 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::mpsc::Receiver;
 
-use euclid::{point2, size2, Size2D};
+use euclid::{point2, size2, Rect, Size2D};
 use glfw::{Context, WindowEvent, WindowMode};
 
 use crate::textbuffer::Buffer;
 
-use super::{
-    opengl::Gl,
-    types::{PixelSize, DPI},
-    UICoreInner,
-};
+use super::types::{PixelSize};
+use super::context::RenderCtx;
+use super::UICoreInner;
 
 pub(crate) struct Window {
     window: glfw::Window,
-    dpi: Size2D<u32, DPI>,
-    size: Size2D<u32, PixelSize>,
-    gl: Gl,
-    ui_core: Rc<RefCell<UICoreInner>>,
+    render_ctx: RenderCtx,
+    ui_core_inner: Rc<RefCell<UICoreInner>>,
 }
 
 impl Window {
@@ -52,22 +48,24 @@ impl Window {
                     .unwrap_or(size2(96, 96));
                 (window, events, dpi)
             });
+            // Make window the current GL context and load OpenGL function pointers
             window.make_current();
             window.set_key_polling(true);
             window.set_char_polling(true);
             window.set_scroll_polling(true);
             window.set_framebuffer_size_polling(true);
             gl::load_with(|s| ui_core.glfw.get_proc_address_raw(s));
+            // Return stuff
             (window, events, dpi)
         };
-        // Initialize OpenGL
+        // Return window wrapper
+        let rect = Rect::new(point2(0, 0), size2(width, height).cast());
+        let clear_color = crate::types::Color::new(255, 255, 255, 255);
         (
             Window {
                 window: window,
-                dpi: dpi,
-                size: size2(width, height),
-                gl: Gl,
-                ui_core: ui_core_inner,
+                render_ctx: RenderCtx::new(rect, dpi, clear_color),
+                ui_core_inner: ui_core_inner,
             },
             events,
         )
@@ -84,10 +82,12 @@ impl Window {
     }
 
     pub(crate) fn refresh(&mut self) {
-        let mut gl = self.gl.activate(&mut self.window);
-        gl.viewport(point2(0, 0), self.size);
-        gl.clear_color(crate::types::Color::new(255, 255, 255, 255));
-        gl.clear();
+        let mut active_ctx = self.render_ctx.activate(&mut self.window);
+        active_ctx.clear();
+
+        active_ctx.color_quad(Rect::new(point2(20, 20), size2(40, 40)), crate::types::Color::new(0, 0, 0, 255));
+        active_ctx.flush();
+
         self.window.swap_buffers();
     }
 
@@ -96,6 +96,6 @@ impl Window {
     }
 
     fn resize(&mut self, size: Size2D<u32, PixelSize>) {
-        self.size = size;
+        self.render_ctx.set_size(size);
     }
 }

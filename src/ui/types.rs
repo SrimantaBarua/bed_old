@@ -2,3 +2,4 @@
 
 pub(super) struct DPI;
 pub(super) struct PixelSize;
+pub(super) struct TextureSize;

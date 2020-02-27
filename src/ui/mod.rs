@@ -9,7 +9,9 @@ use glfw::{Glfw, OpenGlProfileHint, WindowEvent, WindowHint};
 use crate::core::Core;
 use crate::textbuffer::Buffer;
 
+mod context;
 mod opengl;
+mod quad;
 mod types;
 mod window;
 
