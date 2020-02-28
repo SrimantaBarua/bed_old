@@ -9,8 +9,8 @@ use glfw::{Context, WindowEvent, WindowMode};
 
 use crate::textbuffer::Buffer;
 
-use super::types::{PixelSize};
 use super::context::RenderCtx;
+use super::types::PixelSize;
 use super::UICoreInner;
 
 pub(crate) struct Window {
@@ -59,12 +59,11 @@ impl Window {
             (window, events, dpi)
         };
         // Return window wrapper
-        let rect = Rect::new(point2(0, 0), size2(width, height).cast());
         let clear_color = crate::types::Color::new(255, 255, 255, 255);
         (
             Window {
                 window: window,
-                render_ctx: RenderCtx::new(rect, dpi, clear_color),
+                render_ctx: RenderCtx::new(size2(width, height), dpi, clear_color),
                 ui_core_inner: ui_core_inner,
             },
             events,
@@ -84,10 +83,6 @@ impl Window {
     pub(crate) fn refresh(&mut self) {
         let mut active_ctx = self.render_ctx.activate(&mut self.window);
         active_ctx.clear();
-
-        active_ctx.color_quad(Rect::new(point2(20, 20), size2(40, 40)), crate::types::Color::new(0, 0, 0, 255));
-        active_ctx.flush();
-
         self.window.swap_buffers();
     }
 
