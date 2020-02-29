@@ -17,7 +17,7 @@ fn main() {
     let (mut ui_core, window, events) = ui::UICore::init(core, buffer, WIDTH, HEIGHT, TITLE);
     let mut windows = vec![(window, events)];
 
-    let target_duration = time::Duration::from_nanos(1_000_000_000 / 30);
+    let target_duration = time::Duration::from_nanos(1_000_000_000 / 60);
 
     while windows.len() > 0 {
         let start = time::Instant::now();

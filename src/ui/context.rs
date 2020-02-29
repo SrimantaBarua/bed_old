@@ -3,12 +3,13 @@
 use std::ffi::CStr;
 use std::ops::Drop;
 
-use euclid::{point2, Rect, Size2D};
+use euclid::{point2, Point2D, Rect, Size2D};
 
+use super::font::{FaceKey, RasterFace};
+use super::glyphrender::{ActiveGlyphRenderer, GlyphRenderer};
 use super::opengl::{ActiveGl, ElemArr, Gl, Mat4, ShaderProgram};
 use super::quad::{ColorQuad, TexColorQuad};
-use super::types::{PixelSize, TextureSize, DPI};
-use crate::types::Color;
+use crate::types::{Color, PixelSize, TextSize, TextStyle, DPI};
 
 pub(super) struct RenderCtx {
     gl: Gl,
@@ -20,6 +21,7 @@ pub(super) struct RenderCtx {
     tex_clr_quad_shader: ShaderProgram,
     clr_quad_arr: ElemArr<ColorQuad>,
     tex_clr_quad_arr: ElemArr<TexColorQuad>,
+    glyph_renderer: GlyphRenderer,
 }
 
 impl RenderCtx {
@@ -46,6 +48,7 @@ impl RenderCtx {
             tex_clr_quad_shader: tex_clr_shader,
             clr_quad_arr: ElemArr::new(64),
             tex_clr_quad_arr: ElemArr::new(4096),
+            glyph_renderer: GlyphRenderer::new(dpi),
         }
     }
 
@@ -60,7 +63,7 @@ impl RenderCtx {
             clr_quad_shader: &mut self.clr_quad_shader,
             tex_clr_quad_shader: &mut self.tex_clr_quad_shader,
             clr_quad_arr: &mut self.clr_quad_arr,
-            tex_clr_quad_arr: &mut self.tex_clr_quad_arr,
+            active_glyph_renderer: self.glyph_renderer.activate(&mut self.tex_clr_quad_arr),
         };
         ret.set_projection_matrix();
         ret
@@ -80,7 +83,7 @@ pub(super) struct ActiveRenderCtx<'a> {
     clr_quad_shader: &'a mut ShaderProgram,
     tex_clr_quad_shader: &'a mut ShaderProgram,
     clr_quad_arr: &'a mut ElemArr<ColorQuad>,
-    tex_clr_quad_arr: &'a mut ElemArr<TexColorQuad>,
+    active_glyph_renderer: ActiveGlyphRenderer<'a, 'a>,
 }
 
 impl<'a> ActiveRenderCtx<'a> {
@@ -102,7 +105,7 @@ impl<'a> ActiveRenderCtx<'a> {
             clr_quad_shader: self.clr_quad_shader,
             tex_clr_quad_shader: self.tex_clr_quad_shader,
             clr_quad_arr: self.clr_quad_arr,
-            tex_clr_quad_arr: self.tex_clr_quad_arr,
+            active_glyph_renderer: &mut self.active_glyph_renderer,
         };
         ret.draw_bg_stencil();
         ret
@@ -129,7 +132,7 @@ pub(super) struct WidgetRenderCtx<'a, 'b> {
     clr_quad_shader: &'b mut ShaderProgram,
     tex_clr_quad_shader: &'b mut ShaderProgram,
     clr_quad_arr: &'b mut ElemArr<ColorQuad>,
-    tex_clr_quad_arr: &'b mut ElemArr<TexColorQuad>,
+    active_glyph_renderer: &'b mut ActiveGlyphRenderer<'a, 'a>,
 }
 
 impl<'a, 'b> WidgetRenderCtx<'a, 'b> {
@@ -139,18 +142,20 @@ impl<'a, 'b> WidgetRenderCtx<'a, 'b> {
             .push(ColorQuad::new(rect.translate(tvec).cast(), color));
     }
 
-    pub(super) fn tex_color_quad(
+    pub(super) fn glyph(
         &mut self,
-        quad: Rect<i32, PixelSize>,
-        texture: Rect<f32, TextureSize>,
+        pos: Point2D<i32, PixelSize>,
+        face: FaceKey,
+        gid: u32,
+        size: TextSize,
         color: Color,
+        style: TextStyle,
+        raster: &mut RasterFace,
     ) {
         let tvec = self.rect.origin.to_vector();
-        self.tex_clr_quad_arr.push(TexColorQuad::new(
-            quad.translate(tvec).cast(),
-            texture,
-            color,
-        ));
+        let pos = pos + tvec;
+        self.active_glyph_renderer
+            .render_glyph(pos, face, gid, size, color, style, raster);
     }
 
     pub(super) fn flush(&mut self) {
@@ -160,7 +165,7 @@ impl<'a, 'b> WidgetRenderCtx<'a, 'b> {
         }
         {
             let active_shader = self.tex_clr_quad_shader.use_program(&mut self.active_gl);
-            self.tex_clr_quad_arr.flush(&active_shader);
+            self.active_glyph_renderer.flush(&active_shader);
         }
     }
 

@@ -4,33 +4,40 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::mpsc::Receiver;
 
-use euclid::{point2, size2, Rect, Size2D};
-use glfw::{Context, WindowEvent, WindowMode};
+use euclid::{size2, Size2D};
+use glfw::{Context, Glfw, WindowEvent, WindowMode};
 
+use crate::core::Core;
 use crate::textbuffer::Buffer;
+use crate::types::PixelSize;
 
 use super::context::RenderCtx;
-use super::types::PixelSize;
-use super::UICoreInner;
+use super::font::{FaceKey, FontCore};
 
 pub(crate) struct Window {
     window: glfw::Window,
     render_ctx: RenderCtx,
-    ui_core_inner: Rc<RefCell<UICoreInner>>,
+    glfw: Rc<RefCell<Glfw>>,
+    core: Rc<RefCell<Core>>,
+    fixed_face: FaceKey,
+    variable_face: FaceKey,
+    font_core: Rc<RefCell<FontCore>>,
 }
 
 impl Window {
     pub(super) fn first_window(
-        ui_core_inner: Rc<RefCell<UICoreInner>>,
+        glfw: Rc<RefCell<Glfw>>,
+        core: Rc<RefCell<Core>>,
+        font_core: Rc<RefCell<FontCore>>,
         first_buffer: Buffer,
         width: u32,
         height: u32,
         title: &str,
     ) -> (Window, Receiver<(f64, WindowEvent)>) {
         let (window, events, dpi) = {
-            let ui_core = &mut *ui_core_inner.borrow_mut();
+            let glfw = &mut *glfw.borrow_mut();
             // Create GLFW window and calculate DPI
-            let (mut window, events, dpi) = ui_core.glfw.with_primary_monitor(|glfw, m| {
+            let (mut window, events, dpi) = glfw.with_primary_monitor(|glfw, m| {
                 let (window, events) = glfw
                     .create_window(width, height, title, WindowMode::Windowed)
                     .expect("failed to create GLFW window");
@@ -54,17 +61,27 @@ impl Window {
             window.set_char_polling(true);
             window.set_scroll_polling(true);
             window.set_framebuffer_size_polling(true);
-            gl::load_with(|s| ui_core.glfw.get_proc_address_raw(s));
+            gl::load_with(|s| glfw.get_proc_address_raw(s));
             // Return stuff
             (window, events, dpi)
         };
+        let (fixed_face, variable_face) = {
+            let fc = &mut *font_core.borrow_mut();
+            let fixed_face = fc.find("monospace").expect("failed to get monospace font");
+            let variable_face = fc.find("sans").expect("failed to get sans font");
+            (fixed_face, variable_face)
+        };
         // Return window wrapper
-        let clear_color = crate::types::Color::new(255, 255, 255, 255);
+        let clear_color = crate::types::Color::new(0, 0, 0, 255);
         (
             Window {
                 window: window,
                 render_ctx: RenderCtx::new(size2(width, height), dpi, clear_color),
-                ui_core_inner: ui_core_inner,
+                glfw: glfw,
+                core: core,
+                fixed_face: fixed_face,
+                variable_face: variable_face,
+                font_core: font_core,
             },
             events,
         )

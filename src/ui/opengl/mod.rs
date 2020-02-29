@@ -5,16 +5,16 @@ use std::fmt;
 use euclid::{Rect, Size2D};
 use glfw::{Context, Window};
 
-use crate::types::Color;
-
-use super::types::PixelSize;
+use crate::types::{Color, PixelSize};
 
 #[macro_use]
 mod error;
 mod shader;
+mod texture;
 mod vert_array;
 
-pub(super) use shader::ShaderProgram;
+pub(super) use shader::{ActiveShaderProgram, ShaderProgram};
+pub(super) use texture::GlTexture;
 pub(super) use vert_array::{ElemArr, Element};
 
 /// Placeholder for a GL context that is not being used

@@ -3,8 +3,7 @@
 use euclid::Rect;
 
 use super::opengl::Element;
-use super::types::{PixelSize, TextureSize};
-use crate::types::Color;
+use crate::types::{Color, PixelSize, TextureSize};
 
 pub(in crate::ui) struct ColorQuad([f32; 24]);
 
