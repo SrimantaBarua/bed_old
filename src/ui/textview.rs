@@ -82,6 +82,8 @@ pub(super) struct TextView {
     lines: VecDeque<TextViewLine>,
     dpi: Size2D<u32, DPI>,
     font_core: Rc<RefCell<FontCore>>,
+    xbase: u32,
+    ybase: u32,
 }
 
 impl TextView {
@@ -108,9 +110,102 @@ impl TextView {
             lines: VecDeque::new(),
             font_core: font_core,
             dpi: dpi,
+            xbase: 0,
+            ybase: 0,
         };
         textview.refresh();
         textview
+    }
+
+    pub(super) fn scroll(&mut self, amts: (i32, i32)) {
+        // Scroll x
+        let mut x = self.xbase as i32;
+        x += amts.0;
+        self.xbase = if x < 0 {
+            0
+        } else {
+            // TODO Get max width of lines and make sure x is bounded such that the longest line
+            // fills the screen?
+            x as u32
+        };
+        // Scroll y
+        let view = &mut self.views[self.cur_view_idx];
+        let mut y = self.ybase as i32;
+        y += amts.1;
+        if y < 0 {
+            // Scroll up
+            {
+                let font_core = &mut *self.font_core.borrow_mut();
+                let buffer = &*view.buffer.borrow();
+                let pos = buffer.get_pos_at_line(view.start_line);
+                let mut iter = buffer.fmt_lines_from_pos(&pos);
+                while let Some(line) = iter.prev() {
+                    let fmtline = TextViewLine::from_textline(
+                        line,
+                        self.fixed_face,
+                        self.variable_face,
+                        font_core,
+                        self.dpi,
+                    );
+                    y += fmtline.metrics.height as i32;
+                    view.start_line -= 1;
+                    self.lines.push_front(fmtline);
+                    if y >= 0 {
+                        break;
+                    }
+                }
+            }
+            if y < 0 {
+                y = 0;
+            }
+            self.trim_lines_at_end();
+        } else {
+            // Scroll down
+            let mut found = false;
+            while let Some(line) = self.lines.pop_front() {
+                if y < line.metrics.height as i32 {
+                    self.lines.push_front(line);
+                    found = true;
+                    break;
+                }
+                view.start_line += 1;
+                y -= line.metrics.height as i32;
+            }
+            if !found {
+                let font_core = &mut *self.font_core.borrow_mut();
+                let buffer = &*view.buffer.borrow();
+                let len_lines = buffer.len_lines();
+                if view.start_line < len_lines {
+                    let pos = buffer.get_pos_at_line(view.start_line);
+                    for line in buffer.fmt_lines_from_pos(&pos) {
+                        let fmtline = TextViewLine::from_textline(
+                            line,
+                            self.fixed_face,
+                            self.variable_face,
+                            font_core,
+                            self.dpi,
+                        );
+                        if y < fmtline.metrics.height as i32 {
+                            self.lines.push_back(fmtline);
+                            found = true;
+                            break;
+                        }
+                        y -= fmtline.metrics.height as i32;
+                        view.start_line += 1;
+                    }
+                }
+                if !found {
+                    if len_lines > 0 {
+                        view.start_line = len_lines - 1;
+                    } else {
+                        view.start_line = len_lines;
+                    }
+                    y = 0;
+                }
+            }
+            self.fill_lines_at_end();
+        }
+        self.ybase = y as u32;
     }
 
     pub(super) fn set_rect(&mut self, rect: Rect<u32, PixelSize>) {
@@ -120,7 +215,7 @@ impl TextView {
 
     pub(super) fn draw<'a>(&mut self, actx: &'a mut ActiveRenderCtx<'a>) {
         let mut ctx = actx.get_widget_context(self.rect.cast(), self.background_color);
-        let mut pos = point2(0, 0);
+        let mut pos = point2(-(self.xbase as i32), -(self.ybase as i32));
 
         let font_core = &mut *self.font_core.borrow_mut();
 
@@ -157,16 +252,61 @@ impl TextView {
         view.start_line = pos.line_num();
         self.lines.clear();
         let font_core = &mut *self.font_core.borrow_mut();
+        let mut height = 0;
         for line in buffer.fmt_lines_from_pos(&pos) {
-            self.lines.push_back(TextViewLine::from_textline(
+            let fmtline = TextViewLine::from_textline(
                 line,
                 self.fixed_face,
                 self.variable_face,
                 font_core,
                 self.dpi,
-            ));
-            let nlines = self.lines.len();
-            if self.lines[nlines - 1].metrics.height >= self.rect.size.height {
+            );
+            height += fmtline.metrics.height;
+            self.lines.push_back(fmtline);
+            if height >= self.rect.size.height + self.ybase {
+                break;
+            }
+        }
+    }
+
+    fn trim_lines_at_end(&mut self) {
+        let mut total_height = 0;
+        for line in &self.lines {
+            total_height += line.metrics.height;
+        }
+        while let Some(line) = self.lines.pop_back() {
+            if total_height - line.metrics.height < self.rect.size.height {
+                self.lines.push_back(line);
+                break;
+            }
+            total_height -= line.metrics.height;
+        }
+    }
+
+    fn fill_lines_at_end(&mut self) {
+        let view = &mut self.views[self.cur_view_idx];
+        let start_line = view.start_line + self.lines.len();
+        let mut height = 0;
+        for line in &self.lines {
+            height += line.metrics.height;
+        }
+        let buffer = &*view.buffer.borrow();
+        if start_line >= buffer.len_lines() {
+            return;
+        }
+        let pos = buffer.get_pos_at_line(start_line);
+        let font_core = &mut *self.font_core.borrow_mut();
+        for line in buffer.fmt_lines_from_pos(&pos) {
+            let fmtline = TextViewLine::from_textline(
+                line,
+                self.fixed_face,
+                self.variable_face,
+                font_core,
+                self.dpi,
+            );
+            height += fmtline.metrics.height;
+            self.lines.push_back(fmtline);
+            if height >= self.rect.size.height + self.ybase {
                 break;
             }
         }

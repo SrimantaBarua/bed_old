@@ -75,7 +75,7 @@ impl Window {
             (fixed_face, variable_face)
         };
         // Initialize text view tree
-        let rect = Rect::new(point2(0, 0), size2(width, height));
+        let rect = Rect::new(point2(10, 10), size2(width - 20, height - 20));
         let textview = TextView::new(
             first_buffer,
             rect,
@@ -86,7 +86,7 @@ impl Window {
             dpi,
         );
         // Return window wrapper
-        let clear_color = Color::new(0, 0, 0, 255);
+        let clear_color = Color::new(255, 255, 255, 255);
         (
             Window {
                 window: window,
@@ -102,14 +102,43 @@ impl Window {
         )
     }
 
-    pub(crate) fn handle_events(&mut self, events: &Receiver<(f64, WindowEvent)>) -> bool {
+    pub(crate) fn handle_events(
+        &mut self,
+        events: &Receiver<(f64, WindowEvent)>,
+        last_scroll: (i32, i32),
+    ) -> (bool, (i32, i32)) {
+        let mut new_scroll = last_scroll;
+        let mut scroll_mul = (1, 1);
         for (_, event) in glfw::flush_messages(events) {
             match event {
                 WindowEvent::FramebufferSize(w, h) => self.resize(size2(w as u32, h as u32)),
+                WindowEvent::Scroll(x, y) => {
+                    let (x, y) = (-(x as i32) * scroll_mul.0, -(y as i32) * scroll_mul.1);
+                    if x != 0 {
+                        scroll_mul.0 *= 2;
+                    }
+                    if y != 0 {
+                        scroll_mul.1 *= 2;
+                    }
+                    if new_scroll.0 * x > 0 {
+                        new_scroll.0 = new_scroll.0 + x;
+                    } else {
+                        new_scroll.0 = x;
+                    }
+                    if new_scroll.1 * y > 0 {
+                        new_scroll.1 = new_scroll.1 + y;
+                    } else {
+                        new_scroll.1 = y;
+                    }
+                    self.textview.scroll(new_scroll);
+                }
                 _ => {}
             }
         }
-        true
+        if new_scroll == last_scroll {
+            new_scroll = (0, 0);
+        }
+        (true, new_scroll)
     }
 
     pub(crate) fn refresh(&mut self) {
@@ -125,6 +154,9 @@ impl Window {
 
     fn resize(&mut self, size: Size2D<u32, PixelSize>) {
         self.render_ctx.set_size(size);
-        self.textview.set_rect(Rect::new(point2(0, 0), size));
+        self.textview.set_rect(Rect::new(
+            point2(10, 10),
+            size2(size.width - 20, size.height - 20),
+        ));
     }
 }

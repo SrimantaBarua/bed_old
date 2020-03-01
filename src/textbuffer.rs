@@ -12,7 +12,7 @@ use ropey::{
 };
 use unicode_segmentation::{GraphemeCursor, GraphemeIncomplete};
 
-use crate::types::{Color, TextPitch, TextSize, TextStyle};
+use crate::types::{Color, TextPitch, TextSize, TextSlant, TextStyle, TextWeight};
 use crate::ui::text::{TextLine, TextSpan};
 
 /// A cursor into the buffer. The buffer maintains references to all cursors, so they are
@@ -67,6 +67,11 @@ impl Buffer {
                 data: r,
                 cursors: Vec::new(),
             })
+    }
+
+    /// Number of lines in buffer
+    pub(crate) fn len_lines(&self) -> usize {
+        self.data.len_lines()
     }
 
     /// Get position indicator at start of line number
@@ -297,6 +302,21 @@ pub(crate) struct BufferFmtLineIter<'a> {
     lines: Lines<'a>,
 }
 
+impl<'a> BufferFmtLineIter<'a> {
+    pub(crate) fn prev(&mut self) -> Option<TextLine<'a>> {
+        self.lines.prev().map(|l| {
+            TextLine(vec![TextSpan::new(
+                trim_newlines(l),
+                TextSize::from_f32(8.0),
+                TextStyle::new(TextWeight::Medium, TextSlant::Roman),
+                Color::new(0, 0, 0, 255),
+                TextPitch::Fixed,
+                None,
+            )])
+        })
+    }
+}
+
 impl<'a> Iterator for BufferFmtLineIter<'a> {
     type Item = TextLine<'a>;
 
@@ -305,7 +325,7 @@ impl<'a> Iterator for BufferFmtLineIter<'a> {
             TextLine(vec![TextSpan::new(
                 trim_newlines(l),
                 TextSize::from_f32(8.0),
-                TextStyle::default(),
+                TextStyle::new(TextWeight::Medium, TextSlant::Roman),
                 Color::new(0, 0, 0, 255),
                 TextPitch::Fixed,
                 None,
