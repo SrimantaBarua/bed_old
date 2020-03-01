@@ -15,6 +15,8 @@ use unicode_segmentation::{GraphemeCursor, GraphemeIncomplete};
 use crate::types::{Color, TextPitch, TextSize, TextSlant, TextStyle, TextWeight};
 use crate::ui::text::{TextLine, TextSpan};
 
+static TEXT_FG_COLOR: Color = Color::new(64, 64, 64, 255);
+
 /// A cursor into the buffer. The buffer maintains references to all cursors, so they are
 /// updated on editing the buffer
 pub(crate) struct BufferCursor {
@@ -309,7 +311,7 @@ impl<'a> BufferFmtLineIter<'a> {
                 trim_newlines(l),
                 TextSize::from_f32(8.0),
                 TextStyle::new(TextWeight::Medium, TextSlant::Roman),
-                Color::new(0, 0, 0, 255),
+                TEXT_FG_COLOR,
                 TextPitch::Fixed,
                 None,
             )])
@@ -326,7 +328,7 @@ impl<'a> Iterator for BufferFmtLineIter<'a> {
                 trim_newlines(l),
                 TextSize::from_f32(8.0),
                 TextStyle::new(TextWeight::Medium, TextSlant::Roman),
-                Color::new(0, 0, 0, 255),
+                TEXT_FG_COLOR,
                 TextPitch::Fixed,
                 None,
             )])

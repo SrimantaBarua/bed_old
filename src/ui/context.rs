@@ -92,20 +92,15 @@ impl<'a> ActiveRenderCtx<'a> {
         self.active_gl.clear();
     }
 
-    pub(super) fn get_widget_context(
-        &'a mut self,
+    pub(super) fn get_widget_context<'b>(
+        &'b mut self,
         rect: Rect<i32, PixelSize>,
         background_color: Color,
-    ) -> WidgetRenderCtx<'a> {
+    ) -> WidgetRenderCtx<'b, 'a> {
         let mut ret = WidgetRenderCtx {
-            active_gl: &mut self.active_gl,
+            active_ctx: self,
             rect: rect,
-            dpi: self.dpi,
             background_color: background_color,
-            clr_quad_shader: self.clr_quad_shader,
-            tex_clr_quad_shader: self.tex_clr_quad_shader,
-            clr_quad_arr: self.clr_quad_arr,
-            active_glyph_renderer: &mut self.active_glyph_renderer,
         };
         ret.draw_bg_stencil();
         ret
@@ -124,21 +119,17 @@ impl<'a> ActiveRenderCtx<'a> {
     }
 }
 
-pub(super) struct WidgetRenderCtx<'a> {
-    active_gl: &'a mut ActiveGl<'a>,
+pub(super) struct WidgetRenderCtx<'a, 'b> {
+    active_ctx: &'a mut ActiveRenderCtx<'b>,
     rect: Rect<i32, PixelSize>,
     background_color: Color,
-    dpi: Size2D<u32, DPI>,
-    clr_quad_shader: &'a mut ShaderProgram,
-    tex_clr_quad_shader: &'a mut ShaderProgram,
-    clr_quad_arr: &'a mut ElemArr<ColorQuad>,
-    active_glyph_renderer: &'a mut ActiveGlyphRenderer<'a, 'a>,
 }
 
-impl<'a> WidgetRenderCtx<'a> {
+impl<'a, 'b> WidgetRenderCtx<'a, 'b> {
     pub(super) fn color_quad(&mut self, rect: Rect<i32, PixelSize>, color: Color) {
         let tvec = self.rect.origin.to_vector();
-        self.clr_quad_arr
+        self.active_ctx
+            .clr_quad_arr
             .push(ColorQuad::new(rect.translate(tvec).cast(), color));
     }
 
@@ -154,38 +145,63 @@ impl<'a> WidgetRenderCtx<'a> {
     ) {
         let tvec = self.rect.origin.to_vector();
         let pos = pos + tvec;
-        self.active_glyph_renderer
+        self.active_ctx
+            .active_glyph_renderer
             .render_glyph(pos, face, gid, size, color, style, raster);
     }
 
     pub(super) fn flush(&mut self) {
         {
-            let active_shader = self.clr_quad_shader.use_program(&mut self.active_gl);
-            self.clr_quad_arr.flush(&active_shader);
+            let active_shader = self
+                .active_ctx
+                .clr_quad_shader
+                .use_program(&mut self.active_ctx.active_gl);
+            self.active_ctx.clr_quad_arr.flush(&active_shader);
         }
         {
-            let active_shader = self.tex_clr_quad_shader.use_program(&mut self.active_gl);
-            self.active_glyph_renderer.flush(&active_shader);
+            let active_shader = self
+                .active_ctx
+                .tex_clr_quad_shader
+                .use_program(&mut self.active_ctx.active_gl);
+            self.active_ctx.active_glyph_renderer.flush(&active_shader);
         }
     }
 
     fn draw_bg_stencil(&mut self) {
         // Activate stencil writing
-        self.active_gl.set_stencil_test(true);
-        self.active_gl.set_stencil_writing();
+        self.active_ctx.active_gl.set_stencil_test(true);
+        self.active_ctx.active_gl.set_stencil_writing();
         // Draw background and write to stencil
         {
-            let active_shader = self.clr_quad_shader.use_program(&mut self.active_gl);
-            self.clr_quad_arr
+            let active_shader = self
+                .active_ctx
+                .clr_quad_shader
+                .use_program(&mut self.active_ctx.active_gl);
+            self.active_ctx
+                .clr_quad_arr
                 .push(ColorQuad::new(self.rect.cast(), self.background_color));
-            self.clr_quad_arr.flush(&active_shader);
+            self.active_ctx.clr_quad_arr.flush(&active_shader);
         }
-        self.active_gl.set_stencil_reading();
+        self.active_ctx.active_gl.set_stencil_reading();
     }
 }
 
-impl<'a> Drop for WidgetRenderCtx<'a> {
+impl<'a, 'b> Drop for WidgetRenderCtx<'a, 'b> {
     fn drop(&mut self) {
         self.flush();
+        // Activate stencil clearing
+        self.active_ctx.active_gl.set_stencil_clearing(true);
+        // Draw background and write to stencil
+        {
+            let active_shader = self
+                .active_ctx
+                .clr_quad_shader
+                .use_program(&mut self.active_ctx.active_gl);
+            self.active_ctx
+                .clr_quad_arr
+                .push(ColorQuad::new(self.rect.cast(), self.background_color));
+            self.active_ctx.clr_quad_arr.flush(&active_shader);
+        }
+        self.active_ctx.active_gl.set_stencil_clearing(false);
     }
 }

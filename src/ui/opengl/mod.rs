@@ -66,7 +66,7 @@ impl<'a> ActiveGl<'a> {
         if val {
             unsafe {
                 gl::Enable(gl::STENCIL_TEST);
-                gl::StencilOp(gl::KEEP, gl::KEEP, gl::REPLACE);
+                gl::StencilOp(gl::ZERO, gl::ZERO, gl::REPLACE);
             }
         } else {
             unsafe {
@@ -86,6 +86,25 @@ impl<'a> ActiveGl<'a> {
         unsafe {
             gl::StencilFunc(gl::EQUAL, 1, 0xff);
             gl::StencilMask(0x00);
+        }
+    }
+
+    pub(super) fn set_stencil_clearing(&mut self, val: bool) {
+        if val {
+            unsafe {
+                gl::Enable(gl::STENCIL_TEST);
+                gl::StencilOp(gl::ZERO, gl::ZERO, gl::ZERO);
+                gl::StencilFunc(gl::ALWAYS, 1, 0xff);
+                gl::StencilMask(0xff);
+                gl::ColorMask(gl::FALSE, gl::FALSE, gl::FALSE, gl::FALSE);
+                gl::DepthMask(gl::FALSE);
+            }
+        } else {
+            unsafe {
+                gl::Disable(gl::STENCIL_TEST);
+                gl::ColorMask(gl::TRUE, gl::TRUE, gl::TRUE, gl::TRUE);
+                gl::DepthMask(gl::TRUE);
+            }
         }
     }
 }

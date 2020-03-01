@@ -9,11 +9,18 @@ use glfw::{Context, Glfw, WindowEvent, WindowMode};
 
 use crate::core::Core;
 use crate::textbuffer::Buffer;
-use crate::types::{Color, PixelSize};
+use crate::types::{Color, PixelSize, TextSize};
 
 use super::context::RenderCtx;
 use super::font::{FaceKey, FontCore};
 use super::textview::TextView;
+
+static GUTTER_PADDING: u32 = 10;
+static GUTTER_TEXTSIZE: f32 = 7.0;
+static GUTTER_FG_COLOR: Color = Color::new(176, 176, 176, 255);
+static GUTTER_BG_COLOR: Color = Color::new(255, 255, 255, 255);
+static TEXTVIEW_BG_COLOR: Color = Color::new(255, 255, 255, 255);
+static CLEAR_COLOR: Color = Color::new(255, 255, 255, 255);
 
 pub(crate) struct Window {
     window: glfw::Window,
@@ -75,22 +82,26 @@ impl Window {
             (fixed_face, variable_face)
         };
         // Initialize text view tree
-        let rect = Rect::new(point2(10, 10), size2(width - 20, height - 20));
+        let rect = Rect::new(point2(0, 0), size2(width, height));
         let textview = TextView::new(
             first_buffer,
             rect,
-            Color::new(255, 255, 255, 255),
+            TEXTVIEW_BG_COLOR,
             fixed_face,
             variable_face,
             font_core.clone(),
             dpi,
+            true,
+            GUTTER_PADDING,
+            TextSize::from_f32(GUTTER_TEXTSIZE),
+            GUTTER_FG_COLOR,
+            GUTTER_BG_COLOR,
         );
         // Return window wrapper
-        let clear_color = Color::new(255, 255, 255, 255);
         (
             Window {
                 window: window,
-                render_ctx: RenderCtx::new(size2(width, height), dpi, clear_color),
+                render_ctx: RenderCtx::new(size2(width, height), dpi, CLEAR_COLOR),
                 glfw: glfw,
                 core: core,
                 fixed_face: fixed_face,
@@ -109,16 +120,18 @@ impl Window {
     ) -> (bool, (i32, i32)) {
         let mut new_scroll = last_scroll;
         let mut scroll_mul = (1, 1);
+        let mut to_refresh = false;
         for (_, event) in glfw::flush_messages(events) {
+            to_refresh = true;
             match event {
                 WindowEvent::FramebufferSize(w, h) => self.resize(size2(w as u32, h as u32)),
                 WindowEvent::Scroll(x, y) => {
                     let (x, y) = (-(x as i32) * scroll_mul.0, -(y as i32) * scroll_mul.1);
                     if x != 0 {
-                        scroll_mul.0 *= 2;
+                        scroll_mul.0 += 1;
                     }
                     if y != 0 {
-                        scroll_mul.1 *= 2;
+                        scroll_mul.1 += 1;
                     }
                     if new_scroll.0 * x > 0 {
                         new_scroll.0 = new_scroll.0 + x;
@@ -138,7 +151,7 @@ impl Window {
         if new_scroll == last_scroll {
             new_scroll = (0, 0);
         }
-        (true, new_scroll)
+        (to_refresh, new_scroll)
     }
 
     pub(crate) fn refresh(&mut self) {
@@ -154,9 +167,7 @@ impl Window {
 
     fn resize(&mut self, size: Size2D<u32, PixelSize>) {
         self.render_ctx.set_size(size);
-        self.textview.set_rect(Rect::new(
-            point2(10, 10),
-            size2(size.width - 20, size.height - 20),
-        ));
+        self.textview
+            .set_rect(Rect::new(point2(0, 0), size2(size.width, size.height)));
     }
 }
