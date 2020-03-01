@@ -12,8 +12,16 @@ const HEIGHT: u32 = 600;
 const TITLE: &str = "bed";
 
 fn main() {
+    let args = parse_args();
+
     let mut core = core::Core::new();
-    let buffer = core.new_empty_buffer();
+    let buffer = match args.value_of("FILE") {
+        Some(path) => core
+            .new_buffer_from_file(path)
+            .expect("failed to open file"),
+        None => core.new_empty_buffer(),
+    };
+
     let (mut ui_core, window, events) = ui::UICore::init(core, buffer, WIDTH, HEIGHT, TITLE);
     let mut windows = vec![(window, events)];
 
@@ -37,4 +45,19 @@ fn main() {
             thread::sleep(target_duration - diff);
         }
     }
+}
+
+fn parse_args<'a>() -> clap::ArgMatches<'a> {
+    use clap::{App, Arg};
+    App::new("bed")
+        .version("0.0.1")
+        .author("Srimanta Barua <srimanta.barua1@gmail.com>")
+        .about("Barua's editor")
+        .arg(
+            Arg::with_name("FILE")
+                .help("file to open")
+                .required(false)
+                .index(1),
+        )
+        .get_matches()
 }

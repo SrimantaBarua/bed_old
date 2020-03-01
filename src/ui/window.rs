@@ -4,15 +4,16 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::mpsc::Receiver;
 
-use euclid::{size2, Size2D};
+use euclid::{point2, size2, Rect, Size2D};
 use glfw::{Context, Glfw, WindowEvent, WindowMode};
 
 use crate::core::Core;
 use crate::textbuffer::Buffer;
-use crate::types::PixelSize;
+use crate::types::{Color, PixelSize};
 
 use super::context::RenderCtx;
 use super::font::{FaceKey, FontCore};
+use super::textview::TextView;
 
 pub(crate) struct Window {
     window: glfw::Window,
@@ -21,6 +22,7 @@ pub(crate) struct Window {
     core: Rc<RefCell<Core>>,
     fixed_face: FaceKey,
     variable_face: FaceKey,
+    textview: TextView,
     font_core: Rc<RefCell<FontCore>>,
 }
 
@@ -29,7 +31,7 @@ impl Window {
         glfw: Rc<RefCell<Glfw>>,
         core: Rc<RefCell<Core>>,
         font_core: Rc<RefCell<FontCore>>,
-        first_buffer: Buffer,
+        first_buffer: Rc<RefCell<Buffer>>,
         width: u32,
         height: u32,
         title: &str,
@@ -65,14 +67,26 @@ impl Window {
             // Return stuff
             (window, events, dpi)
         };
+        // Initialie fonts
         let (fixed_face, variable_face) = {
             let fc = &mut *font_core.borrow_mut();
             let fixed_face = fc.find("monospace").expect("failed to get monospace font");
             let variable_face = fc.find("sans").expect("failed to get sans font");
             (fixed_face, variable_face)
         };
+        // Initialize text view tree
+        let rect = Rect::new(point2(0, 0), size2(width, height));
+        let textview = TextView::new(
+            first_buffer,
+            rect,
+            Color::new(255, 255, 255, 255),
+            fixed_face,
+            variable_face,
+            font_core.clone(),
+            dpi,
+        );
         // Return window wrapper
-        let clear_color = crate::types::Color::new(0, 0, 0, 255);
+        let clear_color = Color::new(0, 0, 0, 255);
         (
             Window {
                 window: window,
@@ -81,6 +95,7 @@ impl Window {
                 core: core,
                 fixed_face: fixed_face,
                 variable_face: variable_face,
+                textview: textview,
                 font_core: font_core,
             },
             events,
@@ -100,6 +115,7 @@ impl Window {
     pub(crate) fn refresh(&mut self) {
         let mut active_ctx = self.render_ctx.activate(&mut self.window);
         active_ctx.clear();
+        self.textview.draw(&mut active_ctx);
         self.window.swap_buffers();
     }
 
@@ -109,5 +125,6 @@ impl Window {
 
     fn resize(&mut self, size: Size2D<u32, PixelSize>) {
         self.render_ctx.set_size(size);
+        self.textview.set_rect(Rect::new(point2(0, 0), size));
     }
 }

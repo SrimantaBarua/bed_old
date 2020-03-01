@@ -14,6 +14,8 @@ mod font;
 mod glyphrender;
 mod opengl;
 mod quad;
+pub(crate) mod text;
+mod textview;
 mod window;
 
 use font::FontCore;
@@ -29,7 +31,7 @@ pub(crate) struct UICore {
 impl UICore {
     pub(crate) fn init(
         core: Core,
-        first_buffer: Buffer,
+        first_buffer: Rc<RefCell<Buffer>>,
         width: u32,
         height: u32,
         title: &str,

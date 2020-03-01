@@ -5,166 +5,15 @@ use std::fs::File;
 use std::io::Result as IOResult;
 use std::rc::{Rc, Weak};
 
-use ropey::{str_utils::byte_to_char_idx, Rope, RopeSlice};
+use ropey::{
+    iter::{Chunks, Lines},
+    str_utils::byte_to_char_idx,
+    Rope, RopeSlice,
+};
 use unicode_segmentation::{GraphemeCursor, GraphemeIncomplete};
 
-/// Visible handle to text buffer
-#[derive(Clone)]
-pub(crate) struct Buffer {
-    inner: Rc<RefCell<BufferInner>>,
-}
-
-impl Buffer {
-    /// Create empty text buffer
-    pub(crate) fn empty() -> Buffer {
-        Buffer {
-            inner: Rc::new(RefCell::new(BufferInner::empty())),
-        }
-    }
-
-    /// Load buffer contents from file
-    pub(crate) fn from_file(path: &str) -> IOResult<Buffer> {
-        BufferInner::from_file(path).map(|tbi| Buffer {
-            inner: Rc::new(RefCell::new(tbi)),
-        })
-    }
-
-    /// Get position indicator at start of line number
-    pub(crate) fn get_pos_at_line(&self, linum: usize) -> BufferPos {
-        let inner = &*self.inner.borrow();
-        if linum >= inner.data.len_lines() {
-            let cidx = inner.data.len_chars();
-            let linum = inner.data.char_to_line(cidx);
-            let linoff = cidx - inner.data.line_to_char(linum);
-            BufferPos {
-                char_idx: cidx,
-                line_num: linum,
-                line_off: linoff,
-                buffer: self,
-            }
-        } else {
-            BufferPos {
-                char_idx: inner.data.line_to_char(linum),
-                line_num: linum,
-                line_off: 0,
-                buffer: self,
-            }
-        }
-    }
-
-    /// Add cursor at position
-    pub(crate) fn add_cursor_at_pos(&self, pos: &BufferPos) -> BufferCursor {
-        let inner = &mut *self.inner.borrow_mut();
-        inner.clean_cursors();
-        let idx = inner.cursors.binary_search_by_key(&pos.char_idx, |weak| {
-            (&*weak.inner.upgrade().unwrap().borrow()).char_idx
-        });
-        match idx {
-            Ok(idx) => BufferCursor {
-                inner: inner.cursors[idx].inner.upgrade().unwrap(),
-            },
-            Err(idx) => {
-                let ret = BufferCursor {
-                    inner: Rc::new(RefCell::new(BufferCursorInner {
-                        char_idx: pos.char_idx,
-                        line_num: pos.line_num,
-                        line_off: pos.line_off,
-                    })),
-                };
-                inner.cursors.insert(
-                    idx,
-                    BufferCursorWeak {
-                        inner: Rc::downgrade(&ret.inner),
-                    },
-                );
-                ret
-            }
-        }
-    }
-
-    /// Insert character at given cursor position
-    pub(crate) fn insert_char(&mut self, cursor: &mut BufferCursor, c: char) {
-        let b_inner = &mut *self.inner.borrow_mut();
-
-        // Insert character
-        let char_idx = {
-            let c_inner = &*cursor.inner.borrow();
-            b_inner.data.insert_char(c_inner.char_idx, c);
-            c_inner.char_idx
-        };
-
-        // Update cursors after current cursor position
-        b_inner.clean_cursors();
-        let idx = b_inner.cursors.binary_search_by_key(&char_idx, |weak| {
-            (&*weak.inner.upgrade().unwrap().borrow()).char_idx
-        });
-        let idx = match idx {
-            Ok(idx) => {
-                let strong = b_inner.cursors[idx].inner.upgrade().unwrap();
-                let inner = &mut *strong.borrow_mut();
-                inner.char_idx += 1;
-                let slice = b_inner.data.slice(..);
-                if !is_grapheme_boundary(&slice, inner.char_idx) {
-                    inner.char_idx = next_grapheme_boundary(&slice, inner.char_idx);
-                }
-                inner.line_num = b_inner.data.char_to_line(inner.char_idx);
-                inner.line_off = inner.char_idx - b_inner.data.line_to_char(inner.line_num);
-                idx
-            }
-            Err(_) => panic!("cursor not found in buffer"),
-        };
-        for i in (idx + 1)..b_inner.cursors.len() {
-            let strong = b_inner.cursors[i].inner.upgrade().unwrap();
-            let inner = &mut *strong.borrow_mut();
-            inner.char_idx += 1;
-            inner.line_num = b_inner.data.char_to_line(inner.char_idx);
-            inner.line_off = inner.char_idx - b_inner.data.line_to_char(inner.line_num);
-        }
-    }
-
-    /// Insert string at given cursor position
-    pub(crate) fn insert_str(&mut self, cursor: &mut BufferCursor, s: &str) {
-        let b_inner = &mut *self.inner.borrow_mut();
-
-        // Get char count
-        let ccount = s.chars().count();
-
-        // Insert character
-        let char_idx = {
-            let c_inner = &*cursor.inner.borrow();
-            b_inner.data.insert(c_inner.char_idx, s);
-            c_inner.char_idx
-        };
-
-        // Update cursors after current cursor position
-        b_inner.clean_cursors();
-        let idx = b_inner.cursors.binary_search_by_key(&char_idx, |weak| {
-            (&*weak.inner.upgrade().unwrap().borrow()).char_idx
-        });
-        let idx = match idx {
-            Ok(idx) => {
-                let strong = b_inner.cursors[idx].inner.upgrade().unwrap();
-                let inner = &mut *strong.borrow_mut();
-                inner.char_idx += ccount;
-                let slice = b_inner.data.slice(..);
-                if !is_grapheme_boundary(&slice, inner.char_idx) {
-                    inner.char_idx = next_grapheme_boundary(&slice, inner.char_idx);
-                }
-                inner.line_num = b_inner.data.char_to_line(inner.char_idx);
-                inner.line_off = inner.char_idx - b_inner.data.line_to_char(inner.line_num);
-                idx
-            }
-            Err(_) => panic!("cursor not found in buffer"),
-        };
-        for i in (idx + 1)..b_inner.cursors.len() {
-            let strong = b_inner.cursors[i].inner.upgrade().unwrap();
-            let inner = &mut *strong.borrow_mut();
-            inner.char_idx += ccount;
-            inner.line_num = b_inner.data.char_to_line(inner.char_idx);
-            inner.line_off = inner.char_idx - b_inner.data.line_to_char(inner.line_num);
-        }
-    }
-}
+use crate::types::{Color, TextPitch, TextSize, TextStyle};
+use crate::ui::text::{TextLine, TextSpan};
 
 /// A cursor into the buffer. The buffer maintains references to all cursors, so they are
 /// updated on editing the buffer
@@ -183,38 +32,176 @@ struct BufferCursorInner {
 }
 
 /// A location within a buffer. This is invalidated on editing the buffer
-pub(crate) struct BufferPos<'a> {
+pub(crate) struct BufferPos {
     char_idx: usize,
     line_num: usize,
     line_off: usize,
-    buffer: &'a Buffer,
 }
 
-impl<'a> BufferPos<'a> {}
+impl BufferPos {
+    pub(crate) fn line_num(&self) -> usize {
+        self.line_num
+    }
+}
 
 // Actual text storage
-struct BufferInner {
+pub(crate) struct Buffer {
     data: Rope,
     cursors: Vec<BufferCursorWeak>,
 }
 
-impl BufferInner {
-    // Create empty buffer
-    fn empty() -> BufferInner {
-        BufferInner {
+impl Buffer {
+    /// Create empty text buffer
+    pub(crate) fn empty() -> Buffer {
+        Buffer {
             data: Rope::new(),
             cursors: Vec::new(),
         }
     }
 
-    // Create buffer from file
-    fn from_file(path: &str) -> IOResult<BufferInner> {
+    /// Create buffer from file
+    pub(crate) fn from_file(path: &str) -> IOResult<Buffer> {
         File::open(path)
             .and_then(|f| Rope::from_reader(f))
-            .map(|r| BufferInner {
+            .map(|r| Buffer {
                 data: r,
                 cursors: Vec::new(),
             })
+    }
+
+    /// Get position indicator at start of line number
+    pub(crate) fn get_pos_at_line(&self, linum: usize) -> BufferPos {
+        if linum >= self.data.len_lines() {
+            let cidx = self.data.len_chars();
+            let linum = self.data.char_to_line(cidx);
+            let linoff = cidx - self.data.line_to_char(linum);
+            BufferPos {
+                char_idx: cidx,
+                line_num: linum,
+                line_off: linoff,
+            }
+        } else {
+            BufferPos {
+                char_idx: self.data.line_to_char(linum),
+                line_num: linum,
+                line_off: 0,
+            }
+        }
+    }
+
+    /// Get formatted lines from point
+    pub(crate) fn fmt_lines_from_pos(&self, pos: &BufferPos) -> BufferFmtLineIter {
+        BufferFmtLineIter {
+            lines: self.data.lines_at(pos.line_num),
+        }
+    }
+
+    /// Add cursor at position
+    pub(crate) fn add_cursor_at_pos(&mut self, pos: &BufferPos) -> BufferCursor {
+        self.clean_cursors();
+        let idx = self.cursors.binary_search_by_key(&pos.char_idx, |weak| {
+            (&*weak.inner.upgrade().unwrap().borrow()).char_idx
+        });
+        match idx {
+            Ok(idx) => BufferCursor {
+                inner: self.cursors[idx].inner.upgrade().unwrap(),
+            },
+            Err(idx) => {
+                let ret = BufferCursor {
+                    inner: Rc::new(RefCell::new(BufferCursorInner {
+                        char_idx: pos.char_idx,
+                        line_num: pos.line_num,
+                        line_off: pos.line_off,
+                    })),
+                };
+                self.cursors.insert(
+                    idx,
+                    BufferCursorWeak {
+                        inner: Rc::downgrade(&ret.inner),
+                    },
+                );
+                ret
+            }
+        }
+    }
+
+    /// Insert character at given cursor position
+    pub(crate) fn insert_char(&mut self, cursor: &mut BufferCursor, c: char) {
+        // Insert character
+        let char_idx = {
+            let c_inner = &*cursor.inner.borrow();
+            self.data.insert_char(c_inner.char_idx, c);
+            c_inner.char_idx
+        };
+
+        // Update cursors after current cursor position
+        self.clean_cursors();
+        let idx = self.cursors.binary_search_by_key(&char_idx, |weak| {
+            (&*weak.inner.upgrade().unwrap().borrow()).char_idx
+        });
+        let idx = match idx {
+            Ok(idx) => {
+                let strong = self.cursors[idx].inner.upgrade().unwrap();
+                let inner = &mut *strong.borrow_mut();
+                inner.char_idx += 1;
+                let slice = self.data.slice(..);
+                if !is_grapheme_boundary(&slice, inner.char_idx) {
+                    inner.char_idx = next_grapheme_boundary(&slice, inner.char_idx);
+                }
+                inner.line_num = self.data.char_to_line(inner.char_idx);
+                inner.line_off = inner.char_idx - self.data.line_to_char(inner.line_num);
+                idx
+            }
+            Err(_) => panic!("cursor not found in buffer"),
+        };
+        for i in (idx + 1)..self.cursors.len() {
+            let strong = self.cursors[i].inner.upgrade().unwrap();
+            let inner = &mut *strong.borrow_mut();
+            inner.char_idx += 1;
+            inner.line_num = self.data.char_to_line(inner.char_idx);
+            inner.line_off = inner.char_idx - self.data.line_to_char(inner.line_num);
+        }
+    }
+
+    /// Insert string at given cursor position
+    pub(crate) fn insert_str(&mut self, cursor: &mut BufferCursor, s: &str) {
+        // Get char count
+        let ccount = s.chars().count();
+
+        // Insert character
+        let char_idx = {
+            let c_inner = &*cursor.inner.borrow();
+            self.data.insert(c_inner.char_idx, s);
+            c_inner.char_idx
+        };
+
+        // Update cursors after current cursor position
+        self.clean_cursors();
+        let idx = self.cursors.binary_search_by_key(&char_idx, |weak| {
+            (&*weak.inner.upgrade().unwrap().borrow()).char_idx
+        });
+        let idx = match idx {
+            Ok(idx) => {
+                let strong = self.cursors[idx].inner.upgrade().unwrap();
+                let inner = &mut *strong.borrow_mut();
+                inner.char_idx += ccount;
+                let slice = self.data.slice(..);
+                if !is_grapheme_boundary(&slice, inner.char_idx) {
+                    inner.char_idx = next_grapheme_boundary(&slice, inner.char_idx);
+                }
+                inner.line_num = self.data.char_to_line(inner.char_idx);
+                inner.line_off = inner.char_idx - self.data.line_to_char(inner.line_num);
+                idx
+            }
+            Err(_) => panic!("cursor not found in buffer"),
+        };
+        for i in (idx + 1)..self.cursors.len() {
+            let strong = self.cursors[i].inner.upgrade().unwrap();
+            let inner = &mut *strong.borrow_mut();
+            inner.char_idx += ccount;
+            inner.line_num = self.data.char_to_line(inner.char_idx);
+            inner.line_off = inner.char_idx - self.data.line_to_char(inner.line_num);
+        }
     }
 
     // TODO: Evaluate if we should do this on demand only
@@ -306,6 +293,101 @@ fn is_grapheme_boundary(slice: &RopeSlice, char_idx: usize) -> bool {
     }
 }
 
+pub(crate) struct BufferFmtLineIter<'a> {
+    lines: Lines<'a>,
+}
+
+impl<'a> Iterator for BufferFmtLineIter<'a> {
+    type Item = TextLine<'a>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.lines.next().map(|l| {
+            TextLine(vec![TextSpan::new(
+                trim_newlines(l),
+                TextSize::from_f32(8.0),
+                TextStyle::default(),
+                Color::new(0, 0, 0, 255),
+                TextPitch::Fixed,
+                None,
+            )])
+        })
+    }
+}
+
+fn trim_newlines(slice: RopeSlice) -> RopeSlice {
+    let mut end = slice.len_chars();
+    let mut chars = slice.chars_at(slice.len_chars());
+    while let Some(c) = chars.prev() {
+        match c {
+            '\n' | '\x0b' | '\x0c' | '\r' | '\u{0085}' | '\u{2028}' | '\u{2029}' => end -= 1,
+            _ => break,
+        }
+    }
+    slice.slice(..end)
+}
+
+// From https://github.com/cessen/ropey/blob/master/examples/graphemes_iter.rs
+pub(crate) struct RopeGraphemes<'a> {
+    text: RopeSlice<'a>,
+    chunks: Chunks<'a>,
+    cur_chunk: &'a str,
+    cur_chunk_start: usize,
+    cursor: GraphemeCursor,
+}
+
+impl<'a> RopeGraphemes<'a> {
+    pub(crate) fn new<'b>(slice: &RopeSlice<'b>) -> RopeGraphemes<'b> {
+        let mut chunks = slice.chunks();
+        let first_chunk = chunks.next().unwrap_or("");
+        RopeGraphemes {
+            text: *slice,
+            chunks: chunks,
+            cur_chunk: first_chunk,
+            cur_chunk_start: 0,
+            cursor: GraphemeCursor::new(0, slice.len_bytes(), true),
+        }
+    }
+}
+
+impl<'a> Iterator for RopeGraphemes<'a> {
+    type Item = RopeSlice<'a>;
+
+    fn next(&mut self) -> Option<RopeSlice<'a>> {
+        let a = self.cursor.cur_cursor();
+        let b;
+        loop {
+            match self
+                .cursor
+                .next_boundary(self.cur_chunk, self.cur_chunk_start)
+            {
+                Ok(None) => {
+                    return None;
+                }
+                Ok(Some(n)) => {
+                    b = n;
+                    break;
+                }
+                Err(GraphemeIncomplete::NextChunk) => {
+                    self.cur_chunk_start += self.cur_chunk.len();
+                    self.cur_chunk = self.chunks.next().unwrap_or("");
+                }
+                _ => unreachable!(),
+            }
+        }
+
+        if a < self.cur_chunk_start {
+            let a_char = self.text.byte_to_char(a);
+            let b_char = self.text.byte_to_char(b);
+
+            Some(self.text.slice(a_char..b_char))
+        } else {
+            let a2 = a - self.cur_chunk_start;
+            let b2 = b - self.cur_chunk_start;
+            Some((&self.cur_chunk[a2..b2]).into())
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -327,9 +409,6 @@ mod tests {
 
         buffer.insert_str(&mut cursor, " world");
 
-        assert_eq!(
-            &format!("{}", (&*buffer.inner.borrow()).data),
-            "hello world"
-        );
+        assert_eq!(&format!("{}", buffer.data), "hello world");
     }
 }

@@ -79,7 +79,7 @@ impl GlTexture {
         assert!(max.y <= self.size.height, "texture coords out of bounds");
         rect.cast()
             .cast_unit()
-            .scale(self.size.width as f32, self.size.height as f32)
+            .scale(1.0 / self.size.width as f32, 1.0 / self.size.height as f32)
     }
 }
 

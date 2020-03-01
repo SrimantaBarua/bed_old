@@ -92,16 +92,16 @@ impl<'a> ActiveRenderCtx<'a> {
         self.active_gl.clear();
     }
 
-    pub(super) fn get_widget_context<'b>(
-        &'b mut self,
+    pub(super) fn get_widget_context(
+        &'a mut self,
         rect: Rect<i32, PixelSize>,
-        bg_color: Color,
-    ) -> WidgetRenderCtx<'a, 'b> {
+        background_color: Color,
+    ) -> WidgetRenderCtx<'a> {
         let mut ret = WidgetRenderCtx {
             active_gl: &mut self.active_gl,
             rect: rect,
             dpi: self.dpi,
-            background_color: bg_color,
+            background_color: background_color,
             clr_quad_shader: self.clr_quad_shader,
             tex_clr_quad_shader: self.tex_clr_quad_shader,
             clr_quad_arr: self.clr_quad_arr,
@@ -124,18 +124,18 @@ impl<'a> ActiveRenderCtx<'a> {
     }
 }
 
-pub(super) struct WidgetRenderCtx<'a, 'b> {
-    active_gl: &'a mut ActiveGl<'b>,
+pub(super) struct WidgetRenderCtx<'a> {
+    active_gl: &'a mut ActiveGl<'a>,
     rect: Rect<i32, PixelSize>,
     background_color: Color,
     dpi: Size2D<u32, DPI>,
-    clr_quad_shader: &'b mut ShaderProgram,
-    tex_clr_quad_shader: &'b mut ShaderProgram,
-    clr_quad_arr: &'b mut ElemArr<ColorQuad>,
-    active_glyph_renderer: &'b mut ActiveGlyphRenderer<'a, 'a>,
+    clr_quad_shader: &'a mut ShaderProgram,
+    tex_clr_quad_shader: &'a mut ShaderProgram,
+    clr_quad_arr: &'a mut ElemArr<ColorQuad>,
+    active_glyph_renderer: &'a mut ActiveGlyphRenderer<'a, 'a>,
 }
 
-impl<'a, 'b> WidgetRenderCtx<'a, 'b> {
+impl<'a> WidgetRenderCtx<'a> {
     pub(super) fn color_quad(&mut self, rect: Rect<i32, PixelSize>, color: Color) {
         let tvec = self.rect.origin.to_vector();
         self.clr_quad_arr
@@ -184,7 +184,7 @@ impl<'a, 'b> WidgetRenderCtx<'a, 'b> {
     }
 }
 
-impl<'a, 'b> Drop for WidgetRenderCtx<'a, 'b> {
+impl<'a> Drop for WidgetRenderCtx<'a> {
     fn drop(&mut self) {
         self.flush();
     }
