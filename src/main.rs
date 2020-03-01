@@ -23,7 +23,7 @@ fn main() {
     };
 
     let (mut ui_core, window, events) = ui::UICore::init(core, buffer, WIDTH, HEIGHT, TITLE);
-    let mut windows = vec![(window, events, (0, 0))];
+    let mut windows = vec![(window, events, time::Instant::now())];
 
     let target_duration = time::Duration::from_nanos(1_000_000_000 / 60);
 
@@ -34,12 +34,13 @@ fn main() {
         windows.retain(|(window, _, _)| !window.should_close());
 
         for i in 0..windows.len() {
-            let (window, events, last_scroll) = &mut windows[i];
-            let (should_refresh, cur_scroll) = window.handle_events(events, *last_scroll);
+            let (window, events, last_time) = &mut windows[i];
+            let cur_time = time::Instant::now();
+            let should_refresh = window.handle_events(events, cur_time - *last_time);
             if should_refresh {
                 window.refresh();
             }
-            windows[i].2 = cur_scroll;
+            windows[i].2 = cur_time;
         }
 
         let end = time::Instant::now();

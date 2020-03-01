@@ -3,6 +3,7 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::mpsc::Receiver;
+use std::time;
 
 use euclid::{point2, size2, Rect, Size2D};
 use glfw::{Context, Glfw, WindowEvent, WindowMode};
@@ -30,6 +31,7 @@ pub(crate) struct Window {
     fixed_face: FaceKey,
     variable_face: FaceKey,
     textview: TextView,
+    textview_scroll_v: (i32, i32),
     font_core: Rc<RefCell<FontCore>>,
 }
 
@@ -107,6 +109,7 @@ impl Window {
                 fixed_face: fixed_face,
                 variable_face: variable_face,
                 textview: textview,
+                textview_scroll_v: (0, 0),
                 font_core: font_core,
             },
             events,
@@ -116,42 +119,37 @@ impl Window {
     pub(crate) fn handle_events(
         &mut self,
         events: &Receiver<(f64, WindowEvent)>,
-        last_scroll: (i32, i32),
-    ) -> (bool, (i32, i32)) {
-        let mut new_scroll = last_scroll;
-        let mut scroll_mul = (1, 1);
+        duration: time::Duration,
+    ) -> bool {
         let mut to_refresh = false;
+        let mut textview_scroll_a = (0, 0, false);
         for (_, event) in glfw::flush_messages(events) {
             to_refresh = true;
             match event {
                 WindowEvent::FramebufferSize(w, h) => self.resize(size2(w as u32, h as u32)),
                 WindowEvent::Scroll(x, y) => {
-                    let (x, y) = (-(x as i32) * scroll_mul.0, -(y as i32) * scroll_mul.1);
-                    if x != 0 {
-                        scroll_mul.0 += 1;
-                    }
-                    if y != 0 {
-                        scroll_mul.1 += 1;
-                    }
-                    if new_scroll.0 * x > 0 {
-                        new_scroll.0 = new_scroll.0 + x;
-                    } else {
-                        new_scroll.0 = x;
-                    }
-                    if new_scroll.1 * y > 0 {
-                        new_scroll.1 = new_scroll.1 + y;
-                    } else {
-                        new_scroll.1 = y;
-                    }
-                    self.textview.scroll(new_scroll);
+                    let (x, y) = (-(x as i32), -(y as i32));
+                    textview_scroll_a.0 += x;
+                    textview_scroll_a.1 += y;
+                    textview_scroll_a.2 = true;
                 }
                 _ => {}
             }
         }
-        if new_scroll == last_scroll {
-            new_scroll = (0, 0);
+        if !textview_scroll_a.2 {
+            self.textview_scroll_v.0 /= 2;
+            self.textview_scroll_v.1 /= 2;
+        } else {
+            let millis = duration.subsec_millis() as i32;
+            self.textview_scroll_v.0 += (millis * textview_scroll_a.0) * 60 / 200;
+            self.textview_scroll_v.1 += (millis * textview_scroll_a.1) * 60 / 200;
         }
-        (to_refresh, new_scroll)
+        if self.textview_scroll_v != (0, 0) {
+            to_refresh = true;
+            self.textview.scroll(self.textview_scroll_v);
+        }
+
+        to_refresh
     }
 
     pub(crate) fn refresh(&mut self) {
