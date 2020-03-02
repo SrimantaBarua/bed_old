@@ -153,6 +153,126 @@ impl Buffer {
         BufferCursor { inner: strong }
     }
 
+    /// Delete to the left of cursor
+    pub(crate) fn delete_left(&mut self, cursor: &mut BufferCursor, n: usize) {
+        // Delete contents
+        let (cidx, view_id, diff) = {
+            let cursor = &mut *cursor.inner.borrow_mut();
+            let cidx = if cursor.char_idx <= n {
+                0
+            } else {
+                cursor.char_idx - n
+            };
+            let diff = cursor.char_idx - cidx;
+            self.data.remove(cidx..cursor.char_idx);
+            (cidx, cursor.view_id, diff)
+        };
+
+        // Update cursors after current cursor position (inclusive of current cursor)
+        self.clean_cursors_except(view_id);
+
+        for (_, weak) in self.cursors.iter_mut() {
+            let strong = weak.upgrade().unwrap();
+            let inner = &mut *strong.borrow_mut();
+            if inner.char_idx < cidx {
+                continue;
+            }
+            inner.char_idx -= diff;
+            inner.line_num = self.data.char_to_line(inner.char_idx);
+            inner.line_cidx = inner.char_idx - self.data.line_to_char(inner.line_num);
+            let trimmed = trim_newlines(self.data.line(inner.line_num));
+            let (cidx, gidx) = cidx_gidx_from_cidx(&trimmed, inner.line_cidx, self.tabsize);
+            inner.line_cidx = cidx;
+            inner.line_gidx = gidx;
+            inner.line_global_x = inner.line_gidx;
+        }
+    }
+
+    /// Delete to the right of cursor
+    pub(crate) fn delete_right(&mut self, cursor: &mut BufferCursor, n: usize) {
+        // Delete contents
+        let (original_cidx, final_cidx, view_id) = {
+            let cursor = &mut *cursor.inner.borrow_mut();
+            let len_chars = self.data.len_chars();
+            let final_cidx = if cursor.char_idx + n >= len_chars {
+                len_chars
+            } else {
+                cursor.char_idx + n
+            };
+            self.data.remove(cursor.char_idx..final_cidx);
+            (cursor.char_idx, final_cidx, cursor.view_id)
+        };
+        let diff = final_cidx - original_cidx;
+
+        // Update cursors after current cursor position (inclusive of current cursor)
+        self.clean_cursors_except(view_id);
+
+        for (_, weak) in self.cursors.iter_mut() {
+            let strong = weak.upgrade().unwrap();
+            let inner = &mut *strong.borrow_mut();
+            if inner.char_idx < original_cidx {
+                continue;
+            }
+            if inner.char_idx <= final_cidx {
+                inner.char_idx = original_cidx;
+            } else {
+                inner.char_idx -= diff;
+            }
+            inner.line_num = self.data.char_to_line(inner.char_idx);
+            inner.line_cidx = inner.char_idx - self.data.line_to_char(inner.line_num);
+            let trimmed = trim_newlines(self.data.line(inner.line_num));
+            let (cidx, gidx) = cidx_gidx_from_cidx(&trimmed, inner.line_cidx, self.tabsize);
+            inner.line_cidx = cidx;
+            inner.line_gidx = gidx;
+            inner.line_global_x = inner.line_gidx;
+        }
+    }
+
+    /// Delete to start of line
+    pub(crate) fn delete_to_line_start(&mut self, cursor: &mut BufferCursor) {
+        // Delete contents
+        let cursor = &mut *cursor.inner.borrow_mut();
+        let cidx = self.data.line_to_char(cursor.line_num);
+        let diff = cursor.char_idx - cidx;
+        self.data.remove(cidx..cursor.char_idx);
+        cursor.char_idx = cidx;
+        cursor.line_cidx = 0;
+        cursor.line_gidx = 0;
+        cursor.line_global_x = 0;
+
+        // Update cursors after current cursor position
+        self.clean_cursors_except(cursor.view_id);
+        let trimmed = trim_newlines(self.data.line(cursor.line_num));
+
+        for (&k, weak) in self.cursors.iter_mut() {
+            if k == cursor.view_id {
+                continue;
+            }
+            let strong = weak.upgrade().unwrap();
+            let inner = &mut *strong.borrow_mut();
+            if inner.line_num <= cursor.line_num {
+                continue;
+            }
+            if inner.line_num == cursor.line_num {
+                if inner.line_cidx <= diff {
+                    inner.char_idx = cidx;
+                    cursor.line_cidx = 0;
+                    cursor.line_gidx = 0;
+                    cursor.line_global_x = 0;
+                } else {
+                    inner.char_idx -= diff;
+                    inner.line_cidx -= diff;
+                    let (cidx, gidx) = cidx_gidx_from_cidx(&trimmed, inner.line_cidx, self.tabsize);
+                    inner.line_cidx = cidx;
+                    inner.line_gidx = gidx;
+                    inner.line_global_x = inner.line_gidx;
+                }
+            } else {
+                inner.char_idx -= diff;
+            }
+        }
+    }
+
     /// Delete to the end of line
     pub(crate) fn delete_to_line_end(&mut self, cursor: &mut BufferCursor) {
         // Delete contents
@@ -182,10 +302,10 @@ impl Buffer {
                 continue;
             }
             if inner.line_num == cursor.line_num {
+                inner.char_idx = cursor.char_idx;
                 inner.line_cidx = cursor.line_cidx;
                 inner.line_gidx = cursor.line_gidx;
                 inner.line_global_x = cursor.line_gidx;
-                inner.char_idx = cursor.char_idx;
             } else {
                 inner.char_idx = self.data.line_to_char(inner.line_num) + inner.line_cidx;
             }

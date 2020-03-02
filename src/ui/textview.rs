@@ -260,9 +260,25 @@ impl TextView {
 
     pub(super) fn go_to_last_line(&mut self) {}
 
-    pub(super) fn delete_left(&mut self, n: usize) {}
+    pub(super) fn delete_left(&mut self, n: usize) {
+        {
+            let view = &mut self.views[self.cur_view_idx];
+            let buffer = &mut *view.buffer.borrow_mut();
+            buffer.delete_left(&mut view.cursor, n);
+        }
+        self.refresh();
+        self.snap_to_cursor();
+    }
 
-    pub(super) fn delete_right(&mut self, n: usize) {}
+    pub(super) fn delete_right(&mut self, n: usize) {
+        {
+            let view = &mut self.views[self.cur_view_idx];
+            let buffer = &mut *view.buffer.borrow_mut();
+            buffer.delete_right(&mut view.cursor, n);
+        }
+        self.refresh();
+        self.snap_to_cursor();
+    }
 
     pub(super) fn delete_line(&mut self, n: usize) {}
 
@@ -274,7 +290,15 @@ impl TextView {
 
     pub(super) fn delete_to_last_line(&mut self) {}
 
-    pub(super) fn delete_to_line_start(&mut self) {}
+    pub(super) fn delete_to_line_start(&mut self) {
+        {
+            let view = &mut self.views[self.cur_view_idx];
+            let buffer = &mut *view.buffer.borrow_mut();
+            buffer.delete_to_line_start(&mut view.cursor);
+        }
+        self.refresh();
+        self.snap_to_cursor();
+    }
 
     pub(super) fn delete_to_line_end(&mut self) {
         {
