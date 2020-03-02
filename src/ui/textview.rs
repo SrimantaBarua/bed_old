@@ -18,8 +18,7 @@ use super::text::{ShapedTextSpan, TextCursorStyle, TextLine, TextSpan};
 struct View {
     start_line: usize,
     buffer: Rc<RefCell<Buffer>>,
-    main_cursor: BufferCursor,
-    other_cursors: Vec<BufferCursor>,
+    cursor: BufferCursor,
 }
 
 struct TextViewLineMetrics {
@@ -148,21 +147,17 @@ impl TextView {
         gutter_background_color: Color,
         cursor_color: Color,
         cursor_style: TextCursorStyle,
+        view_id: usize,
     ) -> TextView {
-        let (cursor1, cursor2) = {
+        let cursor = {
             let borrow = &mut *buffer.borrow_mut();
-            let pos1 = borrow.get_pos_at_line(0);
-            let pos2 = borrow.get_pos_at_line(10);
-            (
-                borrow.add_cursor_at_pos(&pos1),
-                borrow.add_cursor_at_pos(&pos2),
-            )
+            let pos = borrow.get_pos_at_line(0);
+            borrow.add_cursor_at_pos(view_id, &pos, cursor_style == TextCursorStyle::Beam)
         };
         let views = vec![View {
             start_line: 0,
             buffer: buffer,
-            main_cursor: cursor1,
-            other_cursors: vec![cursor2],
+            cursor: cursor,
         }];
         let mut textview = TextView {
             views: views,
@@ -194,11 +189,9 @@ impl TextView {
         {
             let view = &mut self.views[self.cur_view_idx];
             let buffer = &mut *view.buffer.borrow_mut();
+            view.cursor.set_past_end(style == TextCursorStyle::Beam);
             if self.cursor_style == TextCursorStyle::Beam && style == TextCursorStyle::Block {
-                buffer.move_cursor_left(&mut view.main_cursor, 1);
-                for other in &mut view.other_cursors {
-                    buffer.move_cursor_left(other, 1);
-                }
+                buffer.move_cursor_left(&mut view.cursor, 1);
             }
         }
         self.cursor_style = style;
@@ -209,11 +202,7 @@ impl TextView {
         {
             let view = &mut self.views[self.cur_view_idx];
             let buffer = &mut *view.buffer.borrow_mut();
-            let past_end = self.cursor_style == TextCursorStyle::Beam;
-            buffer.move_cursor_down(&mut view.main_cursor, n, past_end);
-            for other in &mut view.other_cursors {
-                buffer.move_cursor_down(other, n, past_end);
-            }
+            buffer.move_cursor_down(&mut view.cursor, n);
         }
         self.snap_to_cursor();
     }
@@ -222,11 +211,7 @@ impl TextView {
         {
             let view = &mut self.views[self.cur_view_idx];
             let buffer = &mut *view.buffer.borrow_mut();
-            let past_end = self.cursor_style == TextCursorStyle::Beam;
-            buffer.move_cursor_up(&mut view.main_cursor, n, past_end);
-            for other in &mut view.other_cursors {
-                buffer.move_cursor_up(other, n, past_end);
-            }
+            buffer.move_cursor_up(&mut view.cursor, n);
         }
         self.snap_to_cursor();
     }
@@ -235,10 +220,7 @@ impl TextView {
         {
             let view = &mut self.views[self.cur_view_idx];
             let buffer = &mut *view.buffer.borrow_mut();
-            buffer.move_cursor_left(&mut view.main_cursor, n);
-            for other in &mut view.other_cursors {
-                buffer.move_cursor_left(other, n);
-            }
+            buffer.move_cursor_left(&mut view.cursor, n);
         }
         self.snap_to_cursor();
     }
@@ -247,11 +229,7 @@ impl TextView {
         {
             let view = &mut self.views[self.cur_view_idx];
             let buffer = &mut *view.buffer.borrow_mut();
-            let past_end = self.cursor_style == TextCursorStyle::Beam;
-            buffer.move_cursor_right(&mut view.main_cursor, n, past_end);
-            for other in &mut view.other_cursors {
-                buffer.move_cursor_right(other, n, past_end);
-            }
+            buffer.move_cursor_right(&mut view.cursor, n);
         }
         self.snap_to_cursor();
     }
@@ -260,10 +238,7 @@ impl TextView {
         {
             let view = &mut self.views[self.cur_view_idx];
             let buffer = &mut *view.buffer.borrow_mut();
-            buffer.move_cursor_start_of_line(&mut view.main_cursor);
-            for other in &mut view.other_cursors {
-                buffer.move_cursor_start_of_line(other);
-            }
+            buffer.move_cursor_start_of_line(&mut view.cursor);
         }
         self.snap_to_cursor();
     }
@@ -272,11 +247,7 @@ impl TextView {
         {
             let view = &mut self.views[self.cur_view_idx];
             let buffer = &mut *view.buffer.borrow_mut();
-            let past_end = self.cursor_style == TextCursorStyle::Beam;
-            buffer.move_cursor_end_of_line(&mut view.main_cursor, past_end);
-            for other in &mut view.other_cursors {
-                buffer.move_cursor_end_of_line(other, past_end);
-            }
+            buffer.move_cursor_end_of_line(&mut view.cursor);
         }
         self.snap_to_cursor();
     }
@@ -309,11 +280,7 @@ impl TextView {
         {
             let view = &mut self.views[self.cur_view_idx];
             let buffer = &mut *view.buffer.borrow_mut();
-            let past_end = self.cursor_style == TextCursorStyle::Beam;
-            buffer.delete_to_line_end(&mut view.main_cursor, past_end);
-            for other in &mut view.other_cursors {
-                buffer.delete_to_line_end(other, past_end);
-            }
+            buffer.delete_to_line_end(&mut view.cursor);
         }
         self.refresh();
         self.snap_to_cursor();
@@ -323,10 +290,7 @@ impl TextView {
         {
             let view = &mut self.views[self.cur_view_idx];
             let buffer = &mut *view.buffer.borrow_mut();
-            buffer.insert_char(&mut view.main_cursor, c);
-            for other in &mut view.other_cursors {
-                buffer.insert_char(other, c);
-            }
+            buffer.insert_char(&mut view.cursor, c);
         }
         self.refresh();
         self.snap_to_cursor();
@@ -336,10 +300,7 @@ impl TextView {
         {
             let view = &mut self.views[self.cur_view_idx];
             let buffer = &mut *view.buffer.borrow_mut();
-            buffer.insert_str(&mut view.main_cursor, s);
-            for other in &mut view.other_cursors {
-                buffer.insert_str(other, s);
-            }
+            buffer.insert_str(&mut view.cursor, s);
         }
         self.refresh();
         self.snap_to_cursor();
@@ -531,14 +492,7 @@ impl TextView {
         let mut pos = point2(-(self.xbase as i32), -(self.ybase as i32));
 
         let view = &mut self.views[self.cur_view_idx];
-        let main_cursor = &view.main_cursor;
-        let mut cursor_idx = 0;
-        while cursor_idx < view.other_cursors.len() {
-            if view.other_cursors[cursor_idx].line_num() >= view.start_line {
-                break;
-            }
-            cursor_idx += 1;
-        }
+        let cursor = &view.cursor;
 
         for i in 0..self.lines.len() {
             let linum = view.start_line + i;
@@ -562,15 +516,8 @@ impl TextView {
 
                     for j in (0..num_glyphs).step_by(glyphs_per_grapheme) {
                         let mut draw_cursor = false;
-                        if main_cursor.line_num() == linum && main_cursor.line_gidx() == grapheme {
+                        if cursor.line_num() == linum && cursor.line_gidx() == grapheme {
                             draw_cursor = true;
-                        }
-                        if cursor_idx < view.other_cursors.len() {
-                            let other = &view.other_cursors[cursor_idx];
-                            if other.line_num() == linum && other.line_gidx() == grapheme {
-                                cursor_idx += 1;
-                                draw_cursor = true;
-                            }
                         }
                         let mut width = 0;
                         let cursor_x = pos_here.x;
@@ -606,15 +553,8 @@ impl TextView {
             }
 
             let mut draw_cursor = false;
-            if main_cursor.line_num() == linum && main_cursor.line_gidx() == grapheme {
+            if cursor.line_num() == linum && cursor.line_gidx() == grapheme {
                 draw_cursor = true;
-            }
-            if cursor_idx < view.other_cursors.len() {
-                let other = &view.other_cursors[cursor_idx];
-                if other.line_num() == linum && other.line_gidx() == grapheme {
-                    cursor_idx += 1;
-                    draw_cursor = true;
-                }
             }
             if draw_cursor {
                 let (cursor_y, cursor_size) = match self.cursor_style {
@@ -787,7 +727,7 @@ impl TextView {
         let num_lines = self.lines.len();
         let mut buf = String::new();
         let mut lines_height = 0;
-        let cursor_linum = view.main_cursor.line_num();
+        let cursor_linum = view.cursor.line_num();
         for i in 0..self.lines.len() {
             lines_height += max(self.lines[i].metrics.height, self.gutter[i].metrics.height);
         }
@@ -899,8 +839,8 @@ impl TextView {
 
     fn snap_to_x(&mut self) {
         let view = &mut self.views[self.cur_view_idx];
-        let cursor_linum = view.main_cursor.line_num();
-        let gidx = view.main_cursor.line_gidx();
+        let cursor_linum = view.cursor.line_num();
+        let gidx = view.cursor.line_gidx();
         let line = &self.lines[cursor_linum - view.start_line];
         let mut grapheme = 0;
         let mut cursor_x = 0;

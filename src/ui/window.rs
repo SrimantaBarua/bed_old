@@ -88,6 +88,8 @@ impl Window {
             let variable_face = fc.find("sans").expect("failed to get sans font");
             (fixed_face, variable_face)
         };
+        // Request view ID from core
+        let view_id = (&mut *core.borrow_mut()).next_view_id();
         // Initialize text view tree
         let rect = Rect::new(point2(0, 0), size2(width, height));
         let textview = TextView::new(
@@ -105,6 +107,7 @@ impl Window {
             GUTTER_BG_COLOR,
             CURSOR_COLOR,
             TextCursorStyle::Block,
+            view_id,
         );
         // Return window wrapper
         (

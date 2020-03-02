@@ -10,12 +10,14 @@ const TABSIZE: usize = 8;
 
 pub(crate) struct Core {
     buffers: Vec<Rc<RefCell<Buffer>>>,
+    next_view_id: usize,
 }
 
 impl Core {
     pub(crate) fn new() -> Core {
         Core {
             buffers: Vec::new(),
+            next_view_id: 0,
         }
     }
 
@@ -31,5 +33,11 @@ impl Core {
             self.buffers.push(b.clone());
             b
         })
+    }
+
+    pub(crate) fn next_view_id(&mut self) -> usize {
+        let ret = self.next_view_id;
+        self.next_view_id += 1;
+        ret
     }
 }
