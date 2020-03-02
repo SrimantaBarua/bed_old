@@ -235,6 +235,48 @@ impl Buffer {
         }
     }
 
+    /// Move cursor n lines up
+    pub(super) fn move_cursor_up(&mut self, cursor: &mut BufferCursor, n: usize, past_end: bool) {
+        let cursor = &mut *cursor.inner.borrow_mut();
+        if cursor.line_num == 0 {
+            return;
+        }
+        if cursor.line_num < n {
+            cursor.line_num = 0;
+        } else {
+            cursor.line_num -= n;
+        }
+        let trimmed = trim_newlines(self.data.line(cursor.line_num));
+        let (cidx, gidx) =
+            cidx_gidx_from_global_x(&trimmed, cursor.line_global_x, self.tabsize, past_end);
+        cursor.line_cidx = cidx;
+        cursor.line_gidx = gidx;
+        cursor.char_idx = self.data.line_to_char(cursor.line_num) + cursor.line_cidx;
+    }
+
+    /// Move cursor n lines down
+    pub(super) fn move_cursor_down(&mut self, cursor: &mut BufferCursor, n: usize, past_end: bool) {
+        let cursor = &mut *cursor.inner.borrow_mut();
+        cursor.line_num += n;
+        if cursor.line_num >= self.data.len_lines() {
+            let cidx = self.data.len_chars();
+            let linum = self.data.char_to_line(cidx);
+            let linoff = cidx - self.data.line_to_char(linum);
+            cursor.char_idx = cidx;
+            cursor.line_num = linum;
+            cursor.line_cidx = linoff;
+            cursor.line_gidx = gidx_from_cidx(&self.data.line(linum), linoff, self.tabsize);
+        } else {
+            let trimmed = trim_newlines(self.data.line(cursor.line_num));
+            let (cidx, gidx) =
+                cidx_gidx_from_global_x(&trimmed, cursor.line_global_x, self.tabsize, past_end);
+            cursor.line_cidx = cidx;
+            cursor.line_gidx = gidx;
+            cursor.char_idx = self.data.line_to_char(cursor.line_num) + cursor.line_cidx;
+        }
+    }
+
+    /// Move cursor n chars to the left
     pub(super) fn move_cursor_left(&mut self, cursor: &mut BufferCursor, n: usize) {
         let cursor = &mut *cursor.inner.borrow_mut();
         if cursor.line_cidx <= n {
@@ -252,6 +294,7 @@ impl Buffer {
         cursor.line_global_x = cursor.line_gidx;
     }
 
+    /// Move cursor n chars to the right
     pub(super) fn move_cursor_right(
         &mut self,
         cursor: &mut BufferCursor,
@@ -526,6 +569,30 @@ fn cidx_gidx_from_cidx(slice: &RopeSlice, cidx: usize, tabsize: usize) -> (usize
             return (ccount, gidx);
         }
         ccount += count_here;
+        if g == "\t" {
+            gidx = (gidx / tabsize) * tabsize + tabsize;
+        } else {
+            gidx += 1;
+        }
+    }
+    (ccount, gidx)
+}
+
+fn cidx_gidx_from_global_x(
+    slice: &RopeSlice,
+    global_x: usize,
+    tabsize: usize,
+    past_end: bool,
+) -> (usize, usize) {
+    let (mut gidx, mut ccount) = (0, 0);
+    for g in RopeGraphemes::new(slice) {
+        if !past_end && ccount >= slice.len_chars() - 1 {
+            return (ccount, gidx);
+        }
+        if gidx >= global_x {
+            return (ccount, gidx);
+        }
+        ccount += g.chars().count();
         if g == "\t" {
             gidx = (gidx / tabsize) * tabsize + tabsize;
         } else {

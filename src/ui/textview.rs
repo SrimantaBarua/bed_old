@@ -162,7 +162,7 @@ impl TextView {
             start_line: 0,
             buffer: buffer,
             main_cursor: cursor1,
-            other_cursors: vec![cursor2],
+            other_cursors: Vec::new(),
         }];
         let mut textview = TextView {
             views: views,
@@ -205,9 +205,31 @@ impl TextView {
         self.snap_to_cursor();
     }
 
-    pub(super) fn move_cursor_down(&mut self, n: usize) {}
+    pub(super) fn move_cursor_down(&mut self, n: usize) {
+        {
+            let view = &mut self.views[self.cur_view_idx];
+            let buffer = &mut *view.buffer.borrow_mut();
+            let past_end = self.cursor_style == TextCursorStyle::Beam;
+            buffer.move_cursor_down(&mut view.main_cursor, n, past_end);
+            for other in &mut view.other_cursors {
+                buffer.move_cursor_down(other, n, past_end);
+            }
+        }
+        self.snap_to_cursor();
+    }
 
-    pub(super) fn move_cursor_up(&mut self, n: usize) {}
+    pub(super) fn move_cursor_up(&mut self, n: usize) {
+        {
+            let view = &mut self.views[self.cur_view_idx];
+            let buffer = &mut *view.buffer.borrow_mut();
+            let past_end = self.cursor_style == TextCursorStyle::Beam;
+            buffer.move_cursor_up(&mut view.main_cursor, n, past_end);
+            for other in &mut view.other_cursors {
+                buffer.move_cursor_up(other, n, past_end);
+            }
+        }
+        self.snap_to_cursor();
+    }
 
     pub(super) fn move_cursor_left(&mut self, n: usize) {
         {
@@ -413,6 +435,7 @@ impl TextView {
                 }
             }
             self.fill_lines_at_end();
+            self.trim_lines_at_start();
         }
         self.ybase = y as u32;
     }
@@ -645,11 +668,30 @@ impl TextView {
         while let Some(line) = self.lines.pop_back() {
             let gutterline = self.gutter.pop_back().unwrap();
             let height = max(line.metrics.height, gutterline.metrics.height);
-            if total_height - height < self.rect.size.height {
+            if total_height - height < self.rect.size.height + self.ybase {
                 self.lines.push_back(line);
                 self.gutter.push_back(gutterline);
                 break;
             }
+            total_height -= height;
+        }
+    }
+
+    fn trim_lines_at_start(&mut self) {
+        let view = &mut self.views[self.cur_view_idx];
+        let mut total_height = 0;
+        for i in 0..self.lines.len() {
+            total_height += max(self.lines[i].metrics.height, self.gutter[i].metrics.height);
+        }
+        while let Some(line) = self.lines.pop_front() {
+            let gutterline = self.gutter.pop_front().unwrap();
+            let height = max(line.metrics.height, gutterline.metrics.height);
+            if total_height - height < self.rect.size.height + self.ybase {
+                self.lines.push_front(line);
+                self.gutter.push_front(gutterline);
+                break;
+            }
+            view.start_line += 1;
             total_height -= height;
         }
     }
@@ -662,7 +704,7 @@ impl TextView {
             height += max(self.lines[i].metrics.height, self.gutter[i].metrics.height);
         }
         let buffer = &mut *view.buffer.borrow_mut();
-        if start_line >= buffer.len_lines() {
+        if start_line >= buffer.len_lines() || height >= self.rect.size.height + self.ybase {
             return;
         }
         let pos = buffer.get_pos_at_line(start_line);
@@ -807,7 +849,7 @@ impl TextView {
             // If cursor is at last line
             loop {
                 let height = max(self.lines[0].metrics.height, self.gutter[0].metrics.height);
-                if lines_height - height < self.rect.size.height {
+                if lines_height - height < self.rect.size.height + self.ybase {
                     break;
                 }
                 lines_height -= height;

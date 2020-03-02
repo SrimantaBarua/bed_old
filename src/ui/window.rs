@@ -34,6 +34,7 @@ pub(crate) struct Window {
     variable_face: FaceKey,
     textview: TextView,
     textview_scroll_v: (i32, i32),
+    textview_scroll_a: (i32, i32),
     input_state: InputState,
     font_core: Rc<RefCell<FontCore>>,
 }
@@ -116,6 +117,7 @@ impl Window {
                 variable_face: variable_face,
                 textview: textview,
                 textview_scroll_v: (0, 0),
+                textview_scroll_a: (0, 0),
                 input_state: InputState::default(),
                 font_core: font_core,
             },
@@ -129,28 +131,33 @@ impl Window {
         duration: time::Duration,
     ) -> bool {
         let mut to_refresh = false;
-        let mut textview_scroll_a = (0, 0, false);
+
+        // Taper off acceleration
+        self.textview_scroll_a.0 = (self.textview_scroll_a.0 * 3) / 4;
+        self.textview_scroll_a.1 = (self.textview_scroll_a.1 * 3) / 4;
+        // Apply friction
+        self.textview_scroll_v.0 = (self.textview_scroll_v.0 * 3) / 4;
+        self.textview_scroll_v.1 = (self.textview_scroll_v.1 * 3) / 4;
+
         for (_, event) in glfw::flush_messages(events) {
             to_refresh = true;
             match event {
                 WindowEvent::FramebufferSize(w, h) => self.resize(size2(w as u32, h as u32)),
                 WindowEvent::Scroll(x, y) => {
+                    // Scroll acceleration accumulation
                     let (x, y) = (-(x as i32), -(y as i32));
-                    textview_scroll_a.0 += 2 * x;
-                    textview_scroll_a.1 += 2 * y;
-                    textview_scroll_a.2 = true;
+                    self.textview_scroll_a.0 += x;
+                    self.textview_scroll_a.1 += y;
                 }
                 e => self.handle_event(e),
             }
         }
-        if !textview_scroll_a.2 {
-            self.textview_scroll_v.0 /= 2;
-            self.textview_scroll_v.1 /= 2;
-        } else {
-            let millis = duration.subsec_millis() as i32;
-            self.textview_scroll_v.0 += (millis * textview_scroll_a.0) * 60 / 300;
-            self.textview_scroll_v.1 += (millis * textview_scroll_a.1) * 60 / 300;
-        }
+
+        // Apply accelation
+        let millis = duration.subsec_millis() as i32;
+        self.textview_scroll_v.0 += (millis * self.textview_scroll_a.0) / 4;
+        self.textview_scroll_v.1 += (millis * self.textview_scroll_a.1) / 4;
+        // If there is any velocity, we need to refresh
         if self.textview_scroll_v != (0, 0) {
             to_refresh = true;
             self.textview.scroll(self.textview_scroll_v);
