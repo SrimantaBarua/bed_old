@@ -256,9 +256,23 @@ impl TextView {
 
     pub(super) fn page_down(&mut self) {}
 
-    pub(super) fn go_to_line(&mut self, linum: usize) {}
+    pub(super) fn go_to_line(&mut self, linum: usize) {
+        {
+            let view = &mut self.views[self.cur_view_idx];
+            let buffer = &mut *view.buffer.borrow_mut();
+            buffer.move_cursor_to_line(&mut view.cursor, linum);
+        }
+        self.snap_to_cursor();
+    }
 
-    pub(super) fn go_to_last_line(&mut self) {}
+    pub(super) fn go_to_last_line(&mut self) {
+        {
+            let view = &mut self.views[self.cur_view_idx];
+            let buffer = &mut *view.buffer.borrow_mut();
+            buffer.move_cursor_to_last_line(&mut view.cursor);
+        }
+        self.snap_to_cursor();
+    }
 
     pub(super) fn delete_left(&mut self, n: usize) {
         {
@@ -280,7 +294,7 @@ impl TextView {
         self.snap_to_cursor();
     }
 
-    pub(super) fn delete_line(&mut self, n: usize) {}
+    pub(super) fn delete_lines(&mut self, n: usize) {}
 
     pub(super) fn delete_lines_up(&mut self, nlines: usize) {}
 
@@ -387,8 +401,9 @@ impl TextView {
             if y < 0 {
                 y = 0;
             }
+            self.ybase = y as u32;
             self.trim_lines_at_end();
-        } else {
+        } else if amts.1 > 0 {
             // Scroll down
             let mut found = false;
             while let Some(line) = self.lines.pop_front() {
@@ -452,10 +467,12 @@ impl TextView {
                     y = 0;
                 }
             }
+            self.ybase = y as u32;
             self.fill_lines_at_end();
             self.trim_lines_at_start();
+        } else {
+            self.ybase = y as u32;
         }
-        self.ybase = y as u32;
     }
 
     pub(super) fn set_rect(&mut self, rect: Rect<u32, PixelSize>) {

@@ -34,7 +34,6 @@ pub(crate) struct Window {
     variable_face: FaceKey,
     textview: TextView,
     textview_scroll_v: (i32, i32),
-    textview_scroll_a: (i32, i32),
     input_state: InputState,
     font_core: Rc<RefCell<FontCore>>,
 }
@@ -120,7 +119,6 @@ impl Window {
                 variable_face: variable_face,
                 textview: textview,
                 textview_scroll_v: (0, 0),
-                textview_scroll_a: (0, 0),
                 input_state: InputState::default(),
                 font_core: font_core,
             },
@@ -134,13 +132,11 @@ impl Window {
         duration: time::Duration,
     ) -> bool {
         let mut to_refresh = false;
+        let mut textview_scroll_a = (0, 0);
 
-        // Taper off acceleration
-        self.textview_scroll_a.0 = (self.textview_scroll_a.0 * 3) / 4;
-        self.textview_scroll_a.1 = (self.textview_scroll_a.1 * 3) / 4;
         // Apply friction
-        self.textview_scroll_v.0 = (self.textview_scroll_v.0 * 3) / 4;
-        self.textview_scroll_v.1 = (self.textview_scroll_v.1 * 3) / 4;
+        self.textview_scroll_v.0 = (self.textview_scroll_v.0 * 7) / 8;
+        self.textview_scroll_v.1 = (self.textview_scroll_v.1 * 7) / 8;
 
         for (_, event) in glfw::flush_messages(events) {
             to_refresh = true;
@@ -149,8 +145,8 @@ impl Window {
                 WindowEvent::Scroll(x, y) => {
                     // Scroll acceleration accumulation
                     let (x, y) = (-(x as i32), -(y as i32));
-                    self.textview_scroll_a.0 += x;
-                    self.textview_scroll_a.1 += y;
+                    textview_scroll_a.0 += x;
+                    textview_scroll_a.1 += y;
                 }
                 e => self.handle_event(e),
             }
@@ -158,12 +154,18 @@ impl Window {
 
         // Apply accelation
         let millis = duration.subsec_millis() as i32;
-        self.textview_scroll_v.0 += (millis * self.textview_scroll_a.0) / 4;
-        self.textview_scroll_v.1 += (millis * self.textview_scroll_a.1) / 4;
+        self.textview_scroll_v.0 += (millis * textview_scroll_a.0) / 12;
+        self.textview_scroll_v.1 += (millis * textview_scroll_a.1) / 12;
+
+        // Calculate delta
+        let textview_scroll_sx = (millis * self.textview_scroll_v.0) / 4;
+        let textview_scroll_sy = (millis * self.textview_scroll_v.1) / 4;
+        let textview_scroll_s = (textview_scroll_sx, textview_scroll_sy);
+
         // If there is any velocity, we need to refresh
-        if self.textview_scroll_v != (0, 0) {
+        if textview_scroll_s != (0, 0) {
             to_refresh = true;
-            self.textview.scroll(self.textview_scroll_v);
+            self.textview.scroll(textview_scroll_s);
         }
 
         to_refresh
@@ -490,7 +492,7 @@ impl Window {
                             textview.delete_right(amul * *n);
                         }
                         EditOp::Delete(amul, movop) => match movop {
-                            MovementOp::Default(mmul) => textview.delete_line(amul * mmul),
+                            MovementOp::Default(mmul) => textview.delete_lines(amul * mmul),
                             MovementOp::Left(mmul) => textview.delete_left(amul * mmul),
                             MovementOp::Right(mmul) => textview.delete_right(amul * mmul),
                             MovementOp::Up(mmul) => textview.delete_lines_up(amul * mmul),
@@ -622,7 +624,7 @@ impl Window {
                     state.last_edit = EditOp::Delete(act_mult, MovementOp::Default(move_mult));
                     state.mode = InputMode::Normal;
                     textview.set_cursor_style(TextCursorStyle::Block);
-                    textview.delete_line(act_mult * move_mult);
+                    textview.delete_lines(act_mult * move_mult);
                 }
                 WindowEvent::Char(c) if c.is_digit(10) => {
                     state.movement_multiplier.push(c);

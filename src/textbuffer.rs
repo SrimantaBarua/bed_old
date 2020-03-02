@@ -312,6 +312,15 @@ impl Buffer {
         }
     }
 
+    pub(crate) fn delete_lines_up(&mut self, cursor: &mut BufferCursor, nlines: usize) {
+    }
+
+    pub(crate) fn delete_lines_down(&mut self, cursor: &mut BufferCursor, nlines: usize) {
+    }
+
+    pub(crate) fn delete_to_line(&mut self, cursor: &mut BufferCursor, linum: usize) {
+    }
+
     /// Insert character at given cursor position
     pub(crate) fn insert_char(&mut self, cursor: &mut BufferCursor, c: char) {
         let (old_char_idx, view_id) = {
@@ -495,6 +504,35 @@ impl Buffer {
         cursor.line_cidx += diff;
         cursor.line_gidx = gidx_from_cidx(&trimmed, cursor.char_idx, self.tabsize);
         cursor.line_global_x = cursor.line_gidx;
+    }
+
+    /// Move cursor to given line number
+    pub(crate) fn move_cursor_to_line(&mut self, cursor: &mut BufferCursor, mut linum: usize) {
+        let len_lines = self.data.len_lines();
+        if linum >= len_lines {
+            linum = len_lines;
+            if len_lines > 0 {
+                linum -= 1;
+            }
+        }
+        let cursor = &mut *cursor.inner.borrow_mut();
+        cursor.line_num = linum;
+        let trimmed = trim_newlines(self.data.line(cursor.line_num));
+        let (cidx, gidx) = cidx_gidx_from_global_x(
+            &trimmed,
+            cursor.line_global_x,
+            self.tabsize,
+            cursor.past_end,
+        );
+        cursor.line_cidx = cidx;
+        cursor.line_gidx = gidx;
+        cursor.line_global_x = cursor.line_gidx;
+        cursor.char_idx = self.data.line_to_char(cursor.line_num) + cursor.line_cidx;
+    }
+
+    /// Move cursor to last line
+    pub(crate) fn move_cursor_to_last_line(&mut self, cursor: &mut BufferCursor) {
+        self.move_cursor_to_line(cursor, self.data.len_lines());
     }
 
     // TODO: Evaluate if we should do this on demand only
