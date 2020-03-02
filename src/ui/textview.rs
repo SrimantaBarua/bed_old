@@ -162,7 +162,7 @@ impl TextView {
             start_line: 0,
             buffer: buffer,
             main_cursor: cursor1,
-            other_cursors: Vec::new(),
+            other_cursors: vec![cursor2],
         }];
         let mut textview = TextView {
             views: views,
@@ -256,9 +256,30 @@ impl TextView {
         self.snap_to_cursor();
     }
 
-    pub(super) fn move_cursor_start_of_line(&mut self) {}
+    pub(super) fn move_cursor_start_of_line(&mut self) {
+        {
+            let view = &mut self.views[self.cur_view_idx];
+            let buffer = &mut *view.buffer.borrow_mut();
+            buffer.move_cursor_start_of_line(&mut view.main_cursor);
+            for other in &mut view.other_cursors {
+                buffer.move_cursor_start_of_line(other);
+            }
+        }
+        self.snap_to_cursor();
+    }
 
-    pub(super) fn move_cursor_end_of_line(&mut self) {}
+    pub(super) fn move_cursor_end_of_line(&mut self) {
+        {
+            let view = &mut self.views[self.cur_view_idx];
+            let buffer = &mut *view.buffer.borrow_mut();
+            let past_end = self.cursor_style == TextCursorStyle::Beam;
+            buffer.move_cursor_end_of_line(&mut view.main_cursor, past_end);
+            for other in &mut view.other_cursors {
+                buffer.move_cursor_end_of_line(other, past_end);
+            }
+        }
+        self.snap_to_cursor();
+    }
 
     pub(super) fn page_up(&mut self) {}
 
@@ -284,7 +305,19 @@ impl TextView {
 
     pub(super) fn delete_to_line_start(&mut self) {}
 
-    pub(super) fn delete_to_line_end(&mut self) {}
+    pub(super) fn delete_to_line_end(&mut self) {
+        {
+            let view = &mut self.views[self.cur_view_idx];
+            let buffer = &mut *view.buffer.borrow_mut();
+            let past_end = self.cursor_style == TextCursorStyle::Beam;
+            buffer.delete_to_line_end(&mut view.main_cursor, past_end);
+            for other in &mut view.other_cursors {
+                buffer.delete_to_line_end(other, past_end);
+            }
+        }
+        self.refresh();
+        self.snap_to_cursor();
+    }
 
     pub(super) fn insert_char(&mut self, c: char) {
         {

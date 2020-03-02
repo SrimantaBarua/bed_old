@@ -146,6 +146,56 @@ impl Buffer {
         BufferCursor { inner: strong }
     }
 
+    /// Delete to the end of line
+    pub(crate) fn delete_to_line_end(&mut self, cursor: &mut BufferCursor, past_end: bool) {
+        // Delete contents
+        let (linum, char_idx, line_cidx, line_gidx) = {
+            let cursor = &mut *cursor.inner.borrow_mut();
+            let len_chars = trim_newlines(self.data.line(cursor.line_num)).len_chars();
+            self.data
+                .remove(cursor.char_idx..(cursor.char_idx + len_chars - cursor.line_cidx));
+            if !past_end && cursor.line_cidx > 0 {
+                cursor.line_cidx -= 1;
+            }
+            let trimmed = trim_newlines(self.data.line(cursor.line_num));
+            let (cidx, gidx) = cidx_gidx_from_cidx(&trimmed, cursor.line_cidx, self.tabsize);
+            cursor.line_cidx = cidx;
+            cursor.line_gidx = gidx;
+            cursor.line_global_x = cursor.line_gidx;
+            cursor.char_idx = self.data.line_to_char(cursor.line_num) + cursor.line_cidx;
+            (
+                cursor.line_num,
+                cursor.char_idx,
+                cursor.line_cidx,
+                cursor.line_gidx,
+            )
+        };
+
+        // Update cursors after current cursor position
+        self.clean_cursors();
+        let idx = self.cursors.binary_search_by_key(&char_idx, |weak| {
+            (&*weak.upgrade().unwrap().borrow()).char_idx
+        });
+        let idx = match idx {
+            Ok(idx) => idx + 1,
+            Err(_) => panic!("cursor not found in buffer"),
+        };
+        for i in idx..self.cursors.len() {
+            let strong = self.cursors[i].upgrade().unwrap();
+            let inner = &mut *strong.borrow_mut();
+            if inner.line_num == linum {
+                if inner.line_cidx > line_cidx {
+                    inner.line_cidx = line_cidx;
+                    inner.line_gidx = line_gidx;
+                    inner.line_global_x = line_gidx;
+                    inner.char_idx = char_idx;
+                }
+            } else {
+                inner.char_idx = self.data.line_to_char(inner.line_num) + inner.line_cidx;
+            }
+        }
+    }
+
     /// Insert character at given cursor position
     pub(crate) fn insert_char(&mut self, cursor: &mut BufferCursor, c: char) {
         // Insert character
@@ -236,7 +286,7 @@ impl Buffer {
     }
 
     /// Move cursor n lines up
-    pub(super) fn move_cursor_up(&mut self, cursor: &mut BufferCursor, n: usize, past_end: bool) {
+    pub(crate) fn move_cursor_up(&mut self, cursor: &mut BufferCursor, n: usize, past_end: bool) {
         let cursor = &mut *cursor.inner.borrow_mut();
         if cursor.line_num == 0 {
             return;
@@ -255,7 +305,7 @@ impl Buffer {
     }
 
     /// Move cursor n lines down
-    pub(super) fn move_cursor_down(&mut self, cursor: &mut BufferCursor, n: usize, past_end: bool) {
+    pub(crate) fn move_cursor_down(&mut self, cursor: &mut BufferCursor, n: usize, past_end: bool) {
         let cursor = &mut *cursor.inner.borrow_mut();
         cursor.line_num += n;
         if cursor.line_num >= self.data.len_lines() {
@@ -277,25 +327,25 @@ impl Buffer {
     }
 
     /// Move cursor n chars to the left
-    pub(super) fn move_cursor_left(&mut self, cursor: &mut BufferCursor, n: usize) {
+    pub(crate) fn move_cursor_left(&mut self, cursor: &mut BufferCursor, n: usize) {
         let cursor = &mut *cursor.inner.borrow_mut();
         if cursor.line_cidx <= n {
             cursor.char_idx -= cursor.line_cidx;
             cursor.line_cidx = 0;
             cursor.line_gidx = 0;
         } else {
-            cursor.char_idx -= n;
             cursor.line_cidx -= n;
             let line = self.data.line(cursor.line_num);
             let (cidx, gidx) = cidx_gidx_from_cidx(&line, cursor.line_cidx, self.tabsize);
             cursor.line_cidx = cidx;
             cursor.line_gidx = gidx;
+            cursor.char_idx = self.data.line_to_char(cursor.line_num) + cursor.line_cidx;
         }
         cursor.line_global_x = cursor.line_gidx;
     }
 
     /// Move cursor n chars to the right
-    pub(super) fn move_cursor_right(
+    pub(crate) fn move_cursor_right(
         &mut self,
         cursor: &mut BufferCursor,
         mut n: usize,
@@ -314,11 +364,36 @@ impl Buffer {
                 return;
             }
         }
-        cursor.char_idx += n;
         cursor.line_cidx += n;
         let (cidx, gidx) = cidx_gidx_from_cidx(&line, cursor.line_cidx, self.tabsize);
         cursor.line_cidx = cidx;
         cursor.line_gidx = gidx;
+        cursor.char_idx = self.data.line_to_char(cursor.line_num) + cursor.line_cidx;
+        cursor.line_global_x = cursor.line_gidx;
+    }
+
+    /// Move cursor to the start of line
+    pub(crate) fn move_cursor_start_of_line(&mut self, cursor: &mut BufferCursor) {
+        let cursor = &mut *cursor.inner.borrow_mut();
+        cursor.char_idx -= cursor.line_cidx;
+        cursor.line_cidx = 0;
+        cursor.line_gidx = 0;
+        cursor.line_global_x = 0;
+    }
+
+    /// Move cursor to the end of line
+    pub(crate) fn move_cursor_end_of_line(&mut self, cursor: &mut BufferCursor, past_end: bool) {
+        let cursor = &mut *cursor.inner.borrow_mut();
+        let line = self.data.line(cursor.line_num);
+        let trimmed = trim_newlines(line);
+        let mut len_chars = trimmed.len_chars();
+        if !past_end && len_chars > 0 {
+            len_chars -= 1;
+        }
+        let diff = len_chars - cursor.line_cidx;
+        cursor.char_idx += diff;
+        cursor.line_cidx += diff;
+        cursor.line_gidx = gidx_from_cidx(&trimmed, cursor.char_idx, self.tabsize);
         cursor.line_global_x = cursor.line_gidx;
     }
 
