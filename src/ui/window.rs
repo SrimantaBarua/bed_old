@@ -6,7 +6,7 @@ use std::sync::mpsc::Receiver;
 use std::time;
 
 use euclid::{point2, size2, Rect, Size2D};
-use glfw::{Context, Glfw, WindowEvent, WindowMode};
+use glfw::{Action, Context, Glfw, Key, Modifiers, WindowEvent, WindowMode};
 
 use crate::core::Core;
 use crate::textbuffer::Buffer;
@@ -14,6 +14,7 @@ use crate::types::{Color, PixelSize, TextSize};
 
 use super::context::RenderCtx;
 use super::font::{FaceKey, FontCore};
+use super::text::TextCursorStyle;
 use super::textview::TextView;
 
 static GUTTER_PADDING: u32 = 10;
@@ -22,6 +23,7 @@ static GUTTER_FG_COLOR: Color = Color::new(176, 176, 176, 255);
 static GUTTER_BG_COLOR: Color = Color::new(255, 255, 255, 255);
 static TEXTVIEW_BG_COLOR: Color = Color::new(255, 255, 255, 255);
 static CLEAR_COLOR: Color = Color::new(255, 255, 255, 255);
+static CURSOR_COLOR: Color = Color::new(255, 128, 0, 196);
 
 pub(crate) struct Window {
     window: glfw::Window,
@@ -32,6 +34,7 @@ pub(crate) struct Window {
     variable_face: FaceKey,
     textview: TextView,
     textview_scroll_v: (i32, i32),
+    input_state: InputState,
     font_core: Rc<RefCell<FontCore>>,
 }
 
@@ -71,6 +74,7 @@ impl Window {
             window.set_key_polling(true);
             window.set_char_polling(true);
             window.set_scroll_polling(true);
+            window.set_refresh_polling(true);
             window.set_framebuffer_size_polling(true);
             gl::load_with(|s| glfw.get_proc_address_raw(s));
             // Return stuff
@@ -98,6 +102,8 @@ impl Window {
             TextSize::from_f32(GUTTER_TEXTSIZE),
             GUTTER_FG_COLOR,
             GUTTER_BG_COLOR,
+            CURSOR_COLOR,
+            TextCursorStyle::Block,
         );
         // Return window wrapper
         (
@@ -110,6 +116,7 @@ impl Window {
                 variable_face: variable_face,
                 textview: textview,
                 textview_scroll_v: (0, 0),
+                input_state: InputState::default(),
                 font_core: font_core,
             },
             events,
@@ -129,11 +136,11 @@ impl Window {
                 WindowEvent::FramebufferSize(w, h) => self.resize(size2(w as u32, h as u32)),
                 WindowEvent::Scroll(x, y) => {
                     let (x, y) = (-(x as i32), -(y as i32));
-                    textview_scroll_a.0 += x;
-                    textview_scroll_a.1 += y;
+                    textview_scroll_a.0 += 2 * x;
+                    textview_scroll_a.1 += 2 * y;
                     textview_scroll_a.2 = true;
                 }
-                _ => {}
+                e => self.handle_event(e),
             }
         }
         if !textview_scroll_a.2 {
@@ -141,8 +148,8 @@ impl Window {
             self.textview_scroll_v.1 /= 2;
         } else {
             let millis = duration.subsec_millis() as i32;
-            self.textview_scroll_v.0 += (millis * textview_scroll_a.0) * 60 / 200;
-            self.textview_scroll_v.1 += (millis * textview_scroll_a.1) * 60 / 200;
+            self.textview_scroll_v.0 += (millis * textview_scroll_a.0) * 60 / 300;
+            self.textview_scroll_v.1 += (millis * textview_scroll_a.1) * 60 / 300;
         }
         if self.textview_scroll_v != (0, 0) {
             to_refresh = true;
@@ -163,9 +170,559 @@ impl Window {
         self.window.should_close()
     }
 
+    pub(crate) fn set_should_close(&mut self, val: bool) {
+        self.window.set_should_close(val);
+    }
+
     fn resize(&mut self, size: Size2D<u32, PixelSize>) {
         self.render_ctx.set_size(size);
         self.textview
             .set_rect(Rect::new(point2(0, 0), size2(size.width, size.height)));
     }
+
+    fn handle_event(&mut self, event: WindowEvent) {
+        let state = &mut self.input_state;
+        let textview = &mut self.textview;
+        match state.mode {
+            InputMode::Insert => match event {
+                WindowEvent::Key(Key::Escape, _, Action::Press, _) => {
+                    let mult = state.get_action_multiplier();
+                    state.movement_multiplier.clear();
+                    state.mode = InputMode::Normal;
+                    state.last_edit = EditOp::Insert(mult, Insert(state.cur_insert_ops.clone()));
+                    for _ in 0..(mult - 1) {
+                        for op in &state.cur_insert_ops {
+                            match op {
+                                InsertOp::Str(s) => textview.insert_str(s),
+                                _ => {}
+                                InsertOp::Backspace => textview.delete_left(1),
+                                InsertOp::Delete => textview.delete_right(1),
+                                InsertOp::Left => textview.move_cursor_left(1),
+                                InsertOp::Right => textview.move_cursor_right(1),
+                                InsertOp::Up => textview.move_cursor_up(1),
+                                InsertOp::Down => textview.move_cursor_down(1),
+                                InsertOp::Home => textview.move_cursor_start_of_line(),
+                                InsertOp::End => textview.move_cursor_end_of_line(),
+                                InsertOp::PageUp => textview.page_up(),
+                                InsertOp::PageDown => textview.page_down(),
+                            }
+                        }
+                    }
+                    self.input_state.cur_insert_ops.clear();
+                    textview.set_cursor_style(TextCursorStyle::Block);
+                }
+                WindowEvent::Key(Key::Down, _, Action::Press, _)
+                | WindowEvent::Key(Key::Down, _, Action::Repeat, _) => {
+                    state.cur_insert_ops.push(InsertOp::Down);
+                    textview.move_cursor_down(1);
+                }
+                WindowEvent::Key(Key::Up, _, Action::Press, _)
+                | WindowEvent::Key(Key::Up, _, Action::Repeat, _) => {
+                    state.cur_insert_ops.push(InsertOp::Up);
+                    textview.move_cursor_up(1);
+                }
+                WindowEvent::Key(Key::Left, _, Action::Press, _)
+                | WindowEvent::Key(Key::Left, _, Action::Repeat, _) => {
+                    state.cur_insert_ops.push(InsertOp::Left);
+                    textview.move_cursor_left(1);
+                }
+                WindowEvent::Key(Key::Right, _, Action::Press, _)
+                | WindowEvent::Key(Key::Right, _, Action::Repeat, _) => {
+                    state.cur_insert_ops.push(InsertOp::Right);
+                    textview.move_cursor_right(1);
+                }
+                WindowEvent::Key(Key::Home, _, Action::Press, _)
+                | WindowEvent::Key(Key::Home, _, Action::Repeat, _) => {
+                    state.cur_insert_ops.push(InsertOp::Home);
+                    textview.move_cursor_start_of_line();
+                }
+                WindowEvent::Key(Key::End, _, Action::Press, _)
+                | WindowEvent::Key(Key::End, _, Action::Repeat, _) => {
+                    state.cur_insert_ops.push(InsertOp::End);
+                    textview.move_cursor_end_of_line();
+                }
+                WindowEvent::Key(Key::PageUp, _, Action::Press, _)
+                | WindowEvent::Key(Key::PageUp, _, Action::Repeat, _) => {
+                    state.cur_insert_ops.push(InsertOp::PageUp);
+                    textview.page_up();
+                }
+                WindowEvent::Key(Key::PageDown, _, Action::Press, _)
+                | WindowEvent::Key(Key::PageDown, _, Action::Repeat, _) => {
+                    state.cur_insert_ops.push(InsertOp::PageDown);
+                    textview.page_down();
+                }
+                WindowEvent::Key(Key::Backspace, _, Action::Press, _)
+                | WindowEvent::Key(Key::Backspace, _, Action::Repeat, _) => {
+                    state.cur_insert_ops.push(InsertOp::Backspace);
+                    textview.delete_left(1);
+                }
+                WindowEvent::Key(Key::Delete, _, Action::Press, _)
+                | WindowEvent::Key(Key::Delete, _, Action::Repeat, _) => {
+                    state.cur_insert_ops.push(InsertOp::Delete);
+                    textview.delete_right(1);
+                }
+                WindowEvent::Key(Key::V, _, Action::Press, m) => {
+                    if m == Modifiers::Control | Modifiers::Shift {
+                        if let Some(s) = self.window.get_clipboard_string() {
+                            textview.insert_str(&s);
+                        }
+                    }
+                }
+                WindowEvent::Key(Key::Enter, _, Action::Press, _)
+                | WindowEvent::Key(Key::Enter, _, Action::Repeat, _) => {
+                    match state.cur_insert_ops.pop() {
+                        Some(InsertOp::Str(mut s)) => {
+                            s.push('\n');
+                            state.cur_insert_ops.push(InsertOp::Str(s));
+                        }
+                        Some(o) => {
+                            state.cur_insert_ops.push(o);
+                            state.cur_insert_ops.push(InsertOp::Str("\n".to_owned()));
+                        }
+                        _ => state.cur_insert_ops.push(InsertOp::Str("\n".to_owned())),
+                    }
+                    textview.insert_char('\n');
+                }
+                WindowEvent::Key(Key::Tab, _, Action::Press, _)
+                | WindowEvent::Key(Key::Tab, _, Action::Repeat, _) => {
+                    match state.cur_insert_ops.pop() {
+                        Some(InsertOp::Str(mut s)) => {
+                            s.push('\t');
+                            state.cur_insert_ops.push(InsertOp::Str(s));
+                        }
+                        Some(o) => {
+                            state.cur_insert_ops.push(o);
+                            state.cur_insert_ops.push(InsertOp::Str("\t".to_owned()));
+                        }
+                        _ => state.cur_insert_ops.push(InsertOp::Str("\t".to_owned())),
+                    }
+                    textview.insert_char('\t');
+                }
+                WindowEvent::Char(c) => {
+                    match state.cur_insert_ops.pop() {
+                        Some(InsertOp::Str(mut s)) => {
+                            s.push(c);
+                            state.cur_insert_ops.push(InsertOp::Str(s));
+                        }
+                        Some(o) => {
+                            state.cur_insert_ops.push(o);
+                            state.cur_insert_ops.push(InsertOp::Str(c.to_string()));
+                        }
+                        _ => state.cur_insert_ops.push(InsertOp::Str(c.to_string())),
+                    }
+                    textview.insert_char(c);
+                }
+                _ => {}
+            },
+            InputMode::Normal => match event {
+                WindowEvent::Key(Key::Escape, _, Action::Press, _) => {
+                    state.action_multiplier.clear();
+                    state.movement_multiplier.clear();
+                    self.set_should_close(true);
+                }
+                WindowEvent::Key(Key::Down, _, Action::Press, _)
+                | WindowEvent::Key(Key::Down, _, Action::Repeat, _) => {
+                    let mult = state.get_action_multiplier();
+                    state.movement_multiplier.clear();
+                    textview.move_cursor_down(mult);
+                }
+                WindowEvent::Key(Key::Up, _, Action::Press, _)
+                | WindowEvent::Key(Key::Up, _, Action::Repeat, _) => {
+                    let mult = state.get_action_multiplier();
+                    state.movement_multiplier.clear();
+                    textview.move_cursor_up(mult);
+                }
+                WindowEvent::Key(Key::Left, _, Action::Press, _)
+                | WindowEvent::Key(Key::Left, _, Action::Repeat, _) => {
+                    let mult = state.get_action_multiplier();
+                    state.movement_multiplier.clear();
+                    textview.move_cursor_left(mult);
+                }
+                WindowEvent::Key(Key::Right, _, Action::Press, _)
+                | WindowEvent::Key(Key::Right, _, Action::Repeat, _) => {
+                    let mult = state.get_action_multiplier();
+                    state.movement_multiplier.clear();
+                    textview.move_cursor_right(mult);
+                }
+                WindowEvent::Key(Key::Home, _, Action::Press, _)
+                | WindowEvent::Key(Key::Home, _, Action::Repeat, _) => {
+                    state.action_multiplier.clear();
+                    state.movement_multiplier.clear();
+                    textview.move_cursor_start_of_line();
+                }
+                WindowEvent::Key(Key::End, _, Action::Press, _)
+                | WindowEvent::Key(Key::End, _, Action::Repeat, _) => {
+                    state.action_multiplier.clear();
+                    state.movement_multiplier.clear();
+                    textview.move_cursor_end_of_line();
+                }
+                WindowEvent::Key(Key::PageUp, _, Action::Press, _)
+                | WindowEvent::Key(Key::PageUp, _, Action::Repeat, _) => {
+                    state.action_multiplier.clear();
+                    state.movement_multiplier.clear();
+                    textview.page_up();
+                }
+                WindowEvent::Key(Key::PageDown, _, Action::Press, _)
+                | WindowEvent::Key(Key::PageDown, _, Action::Repeat, _) => {
+                    state.action_multiplier.clear();
+                    state.movement_multiplier.clear();
+                    textview.page_down();
+                }
+                WindowEvent::Key(Key::Delete, _, Action::Press, _)
+                | WindowEvent::Key(Key::Delete, _, Action::Repeat, _) => {
+                    let mult = state.get_action_multiplier();
+                    state.movement_multiplier.clear();
+                    textview.delete_right(mult);
+                }
+                WindowEvent::Char('h') => {
+                    let mult = state.get_action_multiplier();
+                    state.movement_multiplier.clear();
+                    textview.move_cursor_left(mult);
+                }
+                WindowEvent::Char('j') => {
+                    let mult = state.get_action_multiplier();
+                    state.movement_multiplier.clear();
+                    textview.move_cursor_down(mult);
+                }
+                WindowEvent::Char('k') => {
+                    let mult = state.get_action_multiplier();
+                    state.movement_multiplier.clear();
+                    textview.move_cursor_up(mult);
+                }
+                WindowEvent::Char('l') => {
+                    let mult = state.get_action_multiplier();
+                    state.movement_multiplier.clear();
+                    textview.move_cursor_right(mult);
+                }
+                WindowEvent::Char('0') if state.action_multiplier.len() == 0 => {
+                    state.action_multiplier.clear();
+                    state.movement_multiplier.clear();
+                    textview.move_cursor_start_of_line();
+                }
+                WindowEvent::Char('$') => {
+                    state.action_multiplier.clear();
+                    state.movement_multiplier.clear();
+                    textview.move_cursor_end_of_line();
+                }
+                WindowEvent::Char('g') => {
+                    let mut linum = state.get_action_multiplier();
+                    if linum > 0 {
+                        linum -= 1;
+                    }
+                    state.movement_multiplier.clear();
+                    textview.go_to_line(linum);
+                }
+                WindowEvent::Char('G') => {
+                    state.action_multiplier.clear();
+                    state.movement_multiplier.clear();
+                    textview.go_to_last_line();
+                }
+                WindowEvent::Char('d') => {
+                    state.mode = InputMode::DeleteMotion;
+                    textview.set_cursor_style(TextCursorStyle::Underline);
+                }
+                WindowEvent::Char('i') => {
+                    state.mode = InputMode::Insert;
+                    state.cur_insert_ops.clear();
+                    textview.set_cursor_style(TextCursorStyle::Beam);
+                }
+                WindowEvent::Char('I') => {
+                    state.mode = InputMode::Insert;
+                    state.cur_insert_ops.clear();
+                    state.cur_insert_ops.push(InsertOp::Home);
+                    textview.set_cursor_style(TextCursorStyle::Beam);
+                    textview.move_cursor_start_of_line();
+                }
+                WindowEvent::Char('a') => {
+                    state.mode = InputMode::Insert;
+                    state.cur_insert_ops.clear();
+                    state.cur_insert_ops.push(InsertOp::Right);
+                    textview.set_cursor_style(TextCursorStyle::Beam);
+                    textview.move_cursor_right(1);
+                }
+                WindowEvent::Char('A') => {
+                    state.mode = InputMode::Insert;
+                    state.cur_insert_ops.clear();
+                    state.cur_insert_ops.push(InsertOp::End);
+                    textview.set_cursor_style(TextCursorStyle::Beam);
+                    textview.move_cursor_end_of_line();
+                }
+                WindowEvent::Char('o') => {
+                    state.mode = InputMode::Insert;
+                    state.cur_insert_ops.clear();
+                    state.cur_insert_ops.push(InsertOp::End);
+                    state.cur_insert_ops.push(InsertOp::Str("\n".to_owned()));
+                    textview.set_cursor_style(TextCursorStyle::Beam);
+                    textview.move_cursor_end_of_line();
+                    textview.insert_char('\n');
+                }
+                WindowEvent::Char('O') => {
+                    state.mode = InputMode::Insert;
+                    state.cur_insert_ops.clear();
+                    state.cur_insert_ops.push(InsertOp::Home);
+                    state.cur_insert_ops.push(InsertOp::Str("\n".to_owned()));
+                    state.cur_insert_ops.push(InsertOp::Up);
+                    textview.set_cursor_style(TextCursorStyle::Beam);
+                    textview.move_cursor_start_of_line();
+                    textview.insert_char('\n');
+                    textview.move_cursor_up(1);
+                }
+                WindowEvent::Char('x') => {
+                    let mult = state.get_action_multiplier();
+                    state.movement_multiplier.clear();
+                    state.last_edit = EditOp::DelChar(mult);
+                    textview.delete_right(mult);
+                }
+                WindowEvent::Char('.') => {
+                    let amul = state.get_action_multiplier();
+                    state.movement_multiplier.clear();
+                    match &state.last_edit {
+                        EditOp::DelChar(n) => {
+                            textview.delete_right(amul * *n);
+                        }
+                        EditOp::Delete(amul, movop) => match movop {
+                            MovementOp::Default(mmul) => textview.delete_line(amul * mmul),
+                            MovementOp::Left(mmul) => textview.delete_left(amul * mmul),
+                            MovementOp::Right(mmul) => textview.delete_right(amul * mmul),
+                            MovementOp::Up(mmul) => textview.delete_lines_up(amul * mmul),
+                            MovementOp::Down(mmul) => textview.delete_lines_down(amul * mmul),
+                            MovementOp::Linum(mmul) => {
+                                for _ in 0..*amul {
+                                    textview.delete_to_line(*mmul);
+                                }
+                            }
+                            MovementOp::LastLine => {
+                                for _ in 0..*amul {
+                                    textview.delete_to_last_line();
+                                }
+                            }
+                            MovementOp::LineStart => textview.delete_to_line_start(),
+                            MovementOp::LineEnd => textview.delete_to_line_end(),
+                            _ => {}
+                        },
+                        EditOp::Insert(n, i) => {
+                            textview.set_cursor_style(TextCursorStyle::Beam);
+                            for _ in 0..(amul * *n) {
+                                for op in &i.0 {
+                                    match op {
+                                        InsertOp::Str(s) => textview.insert_str(s),
+                                        InsertOp::Backspace => textview.delete_left(1),
+                                        InsertOp::Delete => textview.delete_right(1),
+                                        InsertOp::Left => textview.move_cursor_left(1),
+                                        InsertOp::Right => textview.move_cursor_right(1),
+                                        InsertOp::Up => textview.move_cursor_up(1),
+                                        InsertOp::Down => textview.move_cursor_down(1),
+                                        InsertOp::Home => textview.move_cursor_start_of_line(),
+                                        InsertOp::End => textview.move_cursor_end_of_line(),
+                                        InsertOp::PageUp => textview.page_up(),
+                                        InsertOp::PageDown => textview.page_down(),
+                                    }
+                                }
+                            }
+                            textview.set_cursor_style(TextCursorStyle::Block);
+                        }
+                        _ => {}
+                    }
+                }
+                WindowEvent::Char(c) if c.is_digit(10) => {
+                    state.action_multiplier.push(c);
+                }
+                _ => {}
+            },
+            InputMode::DeleteMotion => match event {
+                WindowEvent::Key(Key::Escape, _, Action::Press, _) => {
+                    state.action_multiplier.clear();
+                    state.movement_multiplier.clear();
+                    state.mode = InputMode::Normal;
+                    textview.set_cursor_style(TextCursorStyle::Block);
+                }
+                WindowEvent::Char('h') => {
+                    let act_mult = state.get_action_multiplier();
+                    let move_mult = state.get_movement_multiplier();
+                    state.last_edit = EditOp::Delete(act_mult, MovementOp::Left(move_mult));
+                    state.mode = InputMode::Normal;
+                    textview.set_cursor_style(TextCursorStyle::Block);
+                    textview.delete_left(act_mult * move_mult);
+                }
+                WindowEvent::Char('l') => {
+                    let act_mult = state.get_action_multiplier();
+                    let move_mult = state.get_movement_multiplier();
+                    state.last_edit = EditOp::Delete(act_mult, MovementOp::Right(move_mult));
+                    state.mode = InputMode::Normal;
+                    textview.set_cursor_style(TextCursorStyle::Block);
+                    textview.delete_right(act_mult * move_mult);
+                }
+                WindowEvent::Char('j') => {
+                    let act_mult = state.get_action_multiplier();
+                    let move_mult = state.get_movement_multiplier();
+                    state.last_edit = EditOp::Delete(act_mult, MovementOp::Down(move_mult));
+                    state.mode = InputMode::Normal;
+                    textview.set_cursor_style(TextCursorStyle::Block);
+                    textview.delete_lines_down(act_mult * move_mult);
+                }
+                WindowEvent::Char('k') => {
+                    let act_mult = state.get_action_multiplier();
+                    let move_mult = state.get_movement_multiplier();
+                    state.last_edit = EditOp::Delete(act_mult, MovementOp::Up(move_mult));
+                    state.mode = InputMode::Normal;
+                    textview.set_cursor_style(TextCursorStyle::Block);
+                    textview.delete_lines_up(act_mult * move_mult);
+                }
+                WindowEvent::Char('0') if state.action_multiplier.len() == 0 => {
+                    state.action_multiplier.clear();
+                    state.movement_multiplier.clear();
+                    state.last_edit = EditOp::Delete(1, MovementOp::LineStart);
+                    state.mode = InputMode::Normal;
+                    textview.set_cursor_style(TextCursorStyle::Block);
+                    textview.delete_to_line_start();
+                }
+                WindowEvent::Char('$') => {
+                    state.action_multiplier.clear();
+                    state.movement_multiplier.clear();
+                    state.last_edit = EditOp::Delete(1, MovementOp::LineEnd);
+                    state.mode = InputMode::Normal;
+                    textview.set_cursor_style(TextCursorStyle::Block);
+                    textview.delete_to_line_end();
+                }
+                WindowEvent::Char('g') => {
+                    let act_mult = state.get_action_multiplier();
+                    let mut linum = state.get_movement_multiplier();
+                    if linum > 0 {
+                        linum -= 1;
+                    }
+                    state.last_edit = EditOp::Delete(act_mult, MovementOp::Linum(linum));
+                    state.mode = InputMode::Normal;
+                    textview.set_cursor_style(TextCursorStyle::Block);
+                    for _ in 0..act_mult {
+                        textview.delete_to_line(linum);
+                    }
+                }
+                WindowEvent::Char('G') => {
+                    let act_mult = state.get_action_multiplier();
+                    state.movement_multiplier.clear();
+                    state.last_edit = EditOp::Delete(act_mult, MovementOp::LastLine);
+                    state.mode = InputMode::Normal;
+                    textview.set_cursor_style(TextCursorStyle::Block);
+                    for _ in 0..act_mult {
+                        textview.delete_to_last_line();
+                    }
+                }
+                WindowEvent::Char('d') => {
+                    let act_mult = state.get_action_multiplier();
+                    let move_mult = state.get_movement_multiplier();
+                    state.last_edit = EditOp::Delete(act_mult, MovementOp::Default(move_mult));
+                    state.mode = InputMode::Normal;
+                    textview.set_cursor_style(TextCursorStyle::Block);
+                    textview.delete_line(act_mult * move_mult);
+                }
+                WindowEvent::Char(c) if c.is_digit(10) => {
+                    state.movement_multiplier.push(c);
+                }
+                _ => {}
+            },
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum InputMode {
+    Insert,
+    Normal,
+    DeleteMotion,
+}
+
+impl Default for InputMode {
+    fn default() -> InputMode {
+        InputMode::Normal
+    }
+}
+
+#[derive(Debug)]
+struct InputState {
+    mode: InputMode,
+    action_multiplier: String,
+    movement_multiplier: String,
+    cur_insert_ops: Vec<InsertOp>,
+    last_edit: EditOp,
+}
+
+impl Default for InputState {
+    fn default() -> InputState {
+        InputState {
+            mode: InputMode::default(),
+            action_multiplier: String::new(),
+            movement_multiplier: String::new(),
+            cur_insert_ops: Vec::new(),
+            last_edit: EditOp::None,
+        }
+    }
+}
+
+impl InputState {
+    fn get_movement_multiplier(&mut self) -> usize {
+        if self.movement_multiplier.len() == 0 {
+            1
+        } else {
+            let ret = self.movement_multiplier.parse().unwrap_or(1);
+            self.movement_multiplier.clear();
+            ret
+        }
+    }
+
+    fn get_action_multiplier(&mut self) -> usize {
+        if self.action_multiplier.len() == 0 {
+            1
+        } else {
+            let ret = self.action_multiplier.parse().unwrap_or(1);
+            self.action_multiplier.clear();
+            ret
+        }
+    }
+}
+
+#[derive(Debug)]
+struct Insert(Vec<InsertOp>);
+
+#[derive(Clone, Debug)]
+enum InsertOp {
+    Str(String),
+    Backspace,
+    Delete,
+    Left,
+    Right,
+    Up,
+    Down,
+    Home,
+    End,
+    PageUp,
+    PageDown,
+}
+
+#[derive(Debug)]
+enum EditOp {
+    None,
+    Delete(usize, MovementOp),
+    Change(usize, MovementOp),
+    DelChar(usize),
+    SubstChar(usize),
+    Insert(usize, Insert),
+}
+
+#[derive(Debug, Eq, PartialEq)]
+enum MovementOp {
+    Default(usize),
+    Left(usize),
+    Right(usize),
+    Up(usize),
+    Down(usize),
+    LastLine,
+    LineStart,
+    LineEnd,
+    NextWord,
+    PrevWord,
+    NextEnd,
+    NextMajorWord,
+    PrevMajorWord,
+    NextMajorEnd,
+    Linum(usize),
 }

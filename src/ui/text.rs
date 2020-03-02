@@ -17,7 +17,7 @@ pub(crate) enum TextCursorStyle {
 
 #[derive(Clone, Debug)]
 pub(crate) struct TextSpan<'a> {
-    pub(crate) data: RopeSlice<'a>,
+    pub(crate) data: &'a str,
     pub(crate) size: TextSize,
     pub(crate) style: TextStyle,
     pub(crate) color: Color,
@@ -27,7 +27,7 @@ pub(crate) struct TextSpan<'a> {
 
 impl<'a> TextSpan<'a> {
     pub(crate) fn new(
-        data: RopeSlice,
+        data: &str,
         size: TextSize,
         style: TextStyle,
         color: Color,
@@ -68,7 +68,7 @@ impl<'a> TextSpan<'a> {
     ) -> ShapedTextSpanIter<'a, 'b> {
         ShapedTextSpanIter {
             span: self,
-            cidx: 0,
+            bidx: 0,
             font_core: font_core,
             base_face: match self.pitch {
                 TextPitch::Fixed => fixed_face,
@@ -84,7 +84,7 @@ pub(crate) struct TextLine<'a>(pub(crate) Vec<TextSpan<'a>>);
 
 pub(super) struct ShapedTextSpanIter<'a, 'b> {
     span: &'a TextSpan<'a>,
-    cidx: usize,
+    bidx: usize,
     font_core: &'b mut FontCore,
     base_face: FaceKey,
     dpi: Size2D<u32, DPI>,
@@ -94,15 +94,14 @@ impl<'a, 'b> Iterator for ShapedTextSpanIter<'a, 'b> {
     type Item = ShapedTextSpan;
 
     fn next(&mut self) -> Option<ShapedTextSpan> {
-        let len_chars = self.span.data.len_chars();
-        if self.cidx >= len_chars {
+        if self.bidx >= self.span.data.len() {
             return None;
         }
 
-        let data = self.span.data.slice(self.cidx..len_chars);
-        let mut chars = data.chars().peekable();
+        let data = &self.span.data[self.bidx..];
+        let mut cidxs = data.char_indices().peekable();
         let (face_key, c) = {
-            let c = chars.next().unwrap();
+            let (_, c) = cidxs.next().unwrap();
             (
                 self.font_core
                     .find_for_char(self.base_face, c)
@@ -117,11 +116,11 @@ impl<'a, 'b> Iterator for ShapedTextSpanIter<'a, 'b> {
         let mut cluster = 1;
         let face_metrics = face.raster.get_metrics(self.span.size, self.dpi);
 
-        while let Some(c) = chars.peek() {
+        while let Some((i, c)) = cidxs.peek() {
             if face.raster.has_glyph_for_char(*c) {
                 buf.add(*c, cluster);
                 cluster += 1;
-                chars.next();
+                cidxs.next();
                 continue;
             }
 
@@ -129,7 +128,8 @@ impl<'a, 'b> Iterator for ShapedTextSpanIter<'a, 'b> {
             buf.guess_segment_properties();
 
             let mut last_cursor_position = 0;
-            let cursor_positions = RopeGraphemes::new(&data.slice(0..(cluster as usize)))
+            let cursor_positions = data[..*i]
+                .graphemes(true)
                 .map(|g| {
                     let num_chars = g.chars().count();
                     let ret = last_cursor_position;
@@ -149,7 +149,7 @@ impl<'a, 'b> Iterator for ShapedTextSpanIter<'a, 'b> {
                 underline_color: self.span.underline_color,
             });
 
-            self.cidx += cluster as usize;
+            self.bidx += *i;
             return ret;
         }
 
@@ -157,7 +157,8 @@ impl<'a, 'b> Iterator for ShapedTextSpanIter<'a, 'b> {
         buf.guess_segment_properties();
 
         let mut last_cursor_position = 0;
-        let cursor_positions = RopeGraphemes::new(&data)
+        let cursor_positions = data
+            .graphemes(true)
             .map(|g| {
                 let num_chars = g.chars().count();
                 let ret = last_cursor_position;
@@ -181,176 +182,7 @@ impl<'a, 'b> Iterator for ShapedTextSpanIter<'a, 'b> {
             underline_color: self.span.underline_color,
         });
 
-        self.cidx = self.span.data.len_chars();
-        ret
-    }
-}
-
-#[derive(Clone, Debug)]
-pub(crate) struct TextStr<'a> {
-    pub(crate) data: &'a str,
-    pub(crate) size: TextSize,
-    pub(crate) style: TextStyle,
-    pub(crate) color: Color,
-    pub(crate) pitch: TextPitch,
-    pub(crate) underline_color: Option<Color>,
-}
-
-impl<'a> TextStr<'a> {
-    pub(crate) fn new(
-        data: &str,
-        size: TextSize,
-        style: TextStyle,
-        color: Color,
-        pitch: TextPitch,
-        underline_color: Option<Color>,
-    ) -> TextStr {
-        TextStr {
-            data: data,
-            size: size,
-            style: style,
-            color: color,
-            pitch: pitch,
-            underline_color: underline_color,
-        }
-    }
-
-    pub(super) fn base_face_metrics(
-        &self,
-        fixed_face: FaceKey,
-        variable_face: FaceKey,
-        font_core: &mut FontCore,
-        dpi: Size2D<u32, DPI>,
-    ) -> ScaledFaceMetrics {
-        let base_face = match self.pitch {
-            TextPitch::Fixed => fixed_face,
-            TextPitch::Variable => variable_face,
-        };
-        let (_, face) = font_core.get(base_face, self.style).unwrap();
-        face.raster.get_metrics(self.size, dpi)
-    }
-
-    pub(super) fn shaped_spans<'b>(
-        &'a self,
-        fixed_face: FaceKey,
-        variable_face: FaceKey,
-        font_core: &'b mut FontCore,
-        dpi: Size2D<u32, DPI>,
-    ) -> ShapedTextStrIter<'a, 'b> {
-        ShapedTextStrIter {
-            s: self,
-            bidx: 0,
-            font_core: font_core,
-            base_face: match self.pitch {
-                TextPitch::Fixed => fixed_face,
-                TextPitch::Variable => variable_face,
-            },
-            dpi: dpi,
-        }
-    }
-}
-
-pub(super) struct ShapedTextStrIter<'a, 'b> {
-    s: &'a TextStr<'a>,
-    bidx: usize,
-    font_core: &'b mut FontCore,
-    base_face: FaceKey,
-    dpi: Size2D<u32, DPI>,
-}
-
-impl<'a, 'b> Iterator for ShapedTextStrIter<'a, 'b> {
-    type Item = ShapedTextSpan;
-
-    fn next(&mut self) -> Option<ShapedTextSpan> {
-        if self.bidx >= self.s.data.len() {
-            return None;
-        }
-
-        let data = &self.s.data[self.bidx..];
-        let mut cidxs = data.char_indices().peekable();
-        let (face_key, c) = {
-            let (_, c) = cidxs.next().unwrap();
-            (
-                self.font_core
-                    .find_for_char(self.base_face, c)
-                    .unwrap_or(self.base_face),
-                c,
-            )
-        };
-
-        let (buf, face) = self.font_core.get(face_key, self.s.style).unwrap();
-        buf.clear_contents();
-        buf.add(c, 0);
-        let mut cluster = 1;
-        let face_metrics = face.raster.get_metrics(self.s.size, self.dpi);
-
-        while let Some((i, c)) = cidxs.peek() {
-            if face.raster.has_glyph_for_char(*c) {
-                buf.add(*c, cluster);
-                cluster += 1;
-                cidxs.next();
-                continue;
-            }
-
-            face.shaper.set_scale(self.s.size, self.dpi);
-            buf.guess_segment_properties();
-
-            let mut last_cursor_position = 0;
-            let cursor_positions = data[..*i]
-                .graphemes(true)
-                .map(|g| {
-                    let num_chars = g.chars().count();
-                    let ret = last_cursor_position;
-                    last_cursor_position += num_chars;
-                    ret
-                })
-                .collect();
-
-            let ret = Some(ShapedTextSpan {
-                face: face_key,
-                color: self.s.color,
-                size: self.s.size,
-                style: self.s.style,
-                cursor_positions: cursor_positions,
-                glyph_infos: harfbuzz::shape(&face.shaper, buf).collect(),
-                metrics: face_metrics,
-                underline_color: self.s.underline_color,
-            });
-
-            self.bidx += *i;
-            return ret;
-        }
-
-        face.shaper.set_scale(self.s.size, self.dpi);
-        buf.guess_segment_properties();
-
-        let mut last_cursor_position = 0;
-        let cursor_positions = data
-            .graphemes(true)
-            .map(|g| {
-                let num_chars = g.chars().count();
-                let ret = last_cursor_position;
-                last_cursor_position += num_chars;
-                ret
-            })
-            .collect();
-
-        let mut glyph_infos = Vec::new();
-        for gi in harfbuzz::shape(&face.shaper, buf) {
-            glyph_infos.push(gi);
-        }
-        let ret = Some(ShapedTextSpan {
-            face: face_key,
-            color: self.s.color,
-            size: self.s.size,
-            style: self.s.style,
-            cursor_positions: cursor_positions,
-            metrics: face_metrics,
-            glyph_infos: glyph_infos,
-            underline_color: self.s.underline_color,
-        });
-
-        self.bidx = self.s.data.len();
+        self.bidx = self.span.data.len();
         ret
     }
 }
