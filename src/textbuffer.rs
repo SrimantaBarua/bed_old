@@ -16,7 +16,7 @@ use crate::types::{Color, TextPitch, TextSize, TextSlant, TextStyle, TextWeight}
 use crate::ui::text::{TextLine, TextSpan};
 
 static TEXT_FG_COLOR: Color = Color::new(64, 64, 64, 255);
-static TEXT_SIZE: f32 = 8.0;
+static TEXT_SIZE: f32 = 7.0;
 
 /// A cursor into the buffer. The buffer maintains references to all cursors, so they are
 /// updated on editing the buffer
@@ -39,6 +39,7 @@ struct BufferCursorInner {
     line_num: usize,
     line_cidx: usize,
     line_gidx: usize,
+    line_global_x: usize,
 }
 
 /// A location within a buffer. This is invalidated on editing the buffer
@@ -139,6 +140,7 @@ impl Buffer {
             line_num: pos.line_num,
             line_cidx: pos.line_cidx,
             line_gidx: pos.line_gidx,
+            line_global_x: pos.line_gidx,
         }));
         self.cursors.insert(idx, Rc::downgrade(&strong));
         BufferCursor { inner: strong }
@@ -170,6 +172,7 @@ impl Buffer {
                 cursor.line_cidx = cursor.char_idx - self.data.line_to_char(cursor.line_num);
                 let line = self.data.line(cursor.line_num);
                 cursor.line_gidx = gidx_from_cidx(&line, cursor.line_cidx, self.tabsize);
+                cursor.line_global_x = cursor.line_gidx;
                 idx
             }
             Err(_) => panic!("cursor not found in buffer"),
@@ -182,6 +185,7 @@ impl Buffer {
             inner.line_cidx = inner.char_idx - self.data.line_to_char(inner.line_num);
             let line = self.data.line(inner.line_num);
             inner.line_gidx = gidx_from_cidx(&line, inner.line_cidx, self.tabsize);
+            inner.line_global_x = inner.line_gidx;
         }
     }
 
@@ -214,6 +218,7 @@ impl Buffer {
                 cursor.line_cidx = cursor.char_idx - self.data.line_to_char(cursor.line_num);
                 let line = self.data.line(cursor.line_num);
                 cursor.line_gidx = gidx_from_cidx(&line, cursor.line_cidx, self.tabsize);
+                cursor.line_global_x = cursor.line_gidx;
                 idx
             }
             Err(_) => panic!("cursor not found in buffer"),
@@ -226,21 +231,52 @@ impl Buffer {
             inner.line_cidx = inner.char_idx - self.data.line_to_char(inner.line_num);
             let line = self.data.line(inner.line_num);
             inner.line_gidx = gidx_from_cidx(&line, inner.line_cidx, self.tabsize);
+            inner.line_global_x = inner.line_gidx;
         }
     }
 
     pub(super) fn move_cursor_left(&mut self, cursor: &mut BufferCursor, n: usize) {
         let cursor = &mut *cursor.inner.borrow_mut();
         if cursor.line_cidx <= n {
+            cursor.char_idx -= cursor.line_cidx;
             cursor.line_cidx = 0;
             cursor.line_gidx = 0;
         } else {
+            cursor.char_idx -= n;
             cursor.line_cidx -= n;
             let line = self.data.line(cursor.line_num);
             let (cidx, gidx) = cidx_gidx_from_cidx(&line, cursor.line_cidx, self.tabsize);
             cursor.line_cidx = cidx;
             cursor.line_gidx = gidx;
         }
+        cursor.line_global_x = cursor.line_gidx;
+    }
+
+    pub(super) fn move_cursor_right(
+        &mut self,
+        cursor: &mut BufferCursor,
+        mut n: usize,
+        past_end: bool,
+    ) {
+        let cursor = &mut *cursor.inner.borrow_mut();
+        let line = self.data.line(cursor.line_num);
+        let trimmed = trim_newlines(line);
+        let mut len_chars = trimmed.len_chars();
+        if !past_end && len_chars > 0 {
+            len_chars -= 1;
+        }
+        if cursor.line_cidx + n >= len_chars {
+            n = len_chars - cursor.line_cidx;
+            if n == 0 {
+                return;
+            }
+        }
+        cursor.char_idx += n;
+        cursor.line_cidx += n;
+        let (cidx, gidx) = cidx_gidx_from_cidx(&line, cursor.line_cidx, self.tabsize);
+        cursor.line_cidx = cidx;
+        cursor.line_gidx = gidx;
+        cursor.line_global_x = cursor.line_gidx;
     }
 
     // TODO: Evaluate if we should do this on demand only

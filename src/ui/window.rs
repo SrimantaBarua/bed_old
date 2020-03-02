@@ -194,7 +194,6 @@ impl Window {
                         for op in &state.cur_insert_ops {
                             match op {
                                 InsertOp::Str(s) => textview.insert_str(s),
-                                _ => {}
                                 InsertOp::Backspace => textview.delete_left(1),
                                 InsertOp::Delete => textview.delete_right(1),
                                 InsertOp::Left => textview.move_cursor_left(1),
