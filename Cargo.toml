@@ -4,6 +4,7 @@ version = "0.0.1"
 authors = ["Srimanta Barua <srimanta.barua1@gmail.com>"]
 edition = "2018"
 
+
 [dependencies]
 glfw  = "0.35"
 gl = "0.14"
@@ -11,14 +12,23 @@ ropey = "1.1"
 unicode-segmentation = "1.6"
 clap = "2.33"
 euclid = "0.20.7"
-servo-fontconfig = "0.4"
 harfbuzz-sys = "0.3.4"
 freetype = "0.4.1"
 guillotiere = "0.4.3"
 
+[target.'cfg(unix)'.dependencies]
+servo-fontconfig = "0.4"
+
+[target.'cfg(windows)'.dependencies]
+directwrite = "0.3.0-alpha4"
+com-wrapper = "0.1.0"
+winapi = "0.3.8"
+
+
 [profile.dev]
 opt-level = 0
 debug = 2
+
 
 [profile.release]
 opt-level = 3

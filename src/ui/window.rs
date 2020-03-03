@@ -25,6 +25,16 @@ static TEXTVIEW_BG_COLOR: Color = Color::new(255, 255, 255, 255);
 static CLEAR_COLOR: Color = Color::new(255, 255, 255, 255);
 static CURSOR_COLOR: Color = Color::new(255, 128, 0, 196);
 
+#[cfg(target_os = "unix")]
+const FIXED_FONT: &'static str = "monospace";
+#[cfg(target_os = "windows")]
+const FIXED_FONT: &'static str = "Fira Code";
+
+#[cfg(target_os = "unix")]
+const VARIABLE_FONT: &'static str = "sans";
+#[cfg(target_os = "windows")]
+const VARIABLE_FONT: &'static str = "Arial";
+
 pub(crate) struct Window {
     window: glfw::Window,
     render_ctx: RenderCtx,
@@ -33,7 +43,7 @@ pub(crate) struct Window {
     fixed_face: FaceKey,
     variable_face: FaceKey,
     textview: TextView,
-    textview_scroll_v: (i32, i32),
+    textview_scroll_v: (f64, f64),
     input_state: InputState,
     font_core: Rc<RefCell<FontCore>>,
 }
@@ -83,8 +93,8 @@ impl Window {
         // Initialie fonts
         let (fixed_face, variable_face) = {
             let fc = &mut *font_core.borrow_mut();
-            let fixed_face = fc.find("monospace").expect("failed to get monospace font");
-            let variable_face = fc.find("sans").expect("failed to get sans font");
+            let fixed_face = fc.find(FIXED_FONT).expect("failed to get monospace font");
+            let variable_face = fc.find(VARIABLE_FONT).expect("failed to get sans font");
             (fixed_face, variable_face)
         };
         // Request view ID from core
@@ -118,7 +128,7 @@ impl Window {
                 fixed_face: fixed_face,
                 variable_face: variable_face,
                 textview: textview,
-                textview_scroll_v: (0, 0),
+                textview_scroll_v: (0.0, 0.0),
                 input_state: InputState::default(),
                 font_core: font_core,
             },
@@ -132,11 +142,11 @@ impl Window {
         duration: time::Duration,
     ) -> bool {
         let mut to_refresh = false;
-        let mut textview_scroll_a = (0, 0);
+        let mut textview_scroll_a = (0.0, 0.0);
 
         // Apply friction
-        self.textview_scroll_v.0 = (self.textview_scroll_v.0 * 7) / 8;
-        self.textview_scroll_v.1 = (self.textview_scroll_v.1 * 7) / 8;
+        self.textview_scroll_v.0 = self.textview_scroll_v.0 * (7.0 / 8.0);
+        self.textview_scroll_v.1 = self.textview_scroll_v.1 * (7.0 / 8.0);
 
         for (_, event) in glfw::flush_messages(events) {
             to_refresh = true;
@@ -144,9 +154,8 @@ impl Window {
                 WindowEvent::FramebufferSize(w, h) => self.resize(size2(w as u32, h as u32)),
                 WindowEvent::Scroll(x, y) => {
                     // Scroll acceleration accumulation
-                    let (x, y) = (-(x as i32), -(y as i32));
-                    textview_scroll_a.0 += x;
-                    textview_scroll_a.1 += y;
+                    textview_scroll_a.0 -= x;
+                    textview_scroll_a.1 -= y;
                 }
                 e => self.handle_event(e),
             }
@@ -154,15 +163,19 @@ impl Window {
 
         // Apply accelation
         let millis = duration.subsec_millis() as i32;
-        self.textview_scroll_v.0 += (millis * textview_scroll_a.0) / 12;
-        self.textview_scroll_v.1 += (millis * textview_scroll_a.1) / 12;
+        self.textview_scroll_v.0 += (millis as f64 * textview_scroll_a.0) / 12.0;
+        self.textview_scroll_v.1 += (millis as f64 * textview_scroll_a.1) / 12.0;
 
         // Calculate delta
-        let textview_scroll_sx = (millis * self.textview_scroll_v.0) / 4;
-        let textview_scroll_sy = (millis * self.textview_scroll_v.1) / 4;
+        let textview_scroll_sx = (millis as f64 * self.textview_scroll_v.0) / 4.0;
+        let textview_scroll_sy = (millis as f64 * self.textview_scroll_v.1) / 4.0;
         let textview_scroll_s = (textview_scroll_sx, textview_scroll_sy);
 
         // If there is any velocity, we need to refresh
+        let textview_scroll_s = (
+            textview_scroll_s.0.round() as i32,
+            textview_scroll_s.1.round() as i32,
+        );
         if textview_scroll_s != (0, 0) {
             to_refresh = true;
             self.textview.scroll(textview_scroll_s);

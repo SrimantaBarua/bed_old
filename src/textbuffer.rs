@@ -312,14 +312,11 @@ impl Buffer {
         }
     }
 
-    pub(crate) fn delete_lines_up(&mut self, cursor: &mut BufferCursor, nlines: usize) {
-    }
+    pub(crate) fn delete_lines_up(&mut self, cursor: &mut BufferCursor, nlines: usize) {}
 
-    pub(crate) fn delete_lines_down(&mut self, cursor: &mut BufferCursor, nlines: usize) {
-    }
+    pub(crate) fn delete_lines_down(&mut self, cursor: &mut BufferCursor, nlines: usize) {}
 
-    pub(crate) fn delete_to_line(&mut self, cursor: &mut BufferCursor, linum: usize) {
-    }
+    pub(crate) fn delete_to_line(&mut self, cursor: &mut BufferCursor, linum: usize) {}
 
     /// Insert character at given cursor position
     pub(crate) fn insert_char(&mut self, cursor: &mut BufferCursor, c: char) {

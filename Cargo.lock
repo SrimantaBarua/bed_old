@@ -21,6 +21,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "auto-enum"
+version = "0.2.0-alpha1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8d81b8fdae158e0c0a38424e6ff6e36924a42e5de8d86f563b25d7576f599498"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
 name = "autocfg"
 version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -31,6 +42,8 @@ name = "bed"
 version = "0.0.1"
 dependencies = [
  "clap",
+ "com-wrapper",
+ "directwrite",
  "euclid 0.20.7",
  "freetype",
  "gl",
@@ -40,6 +53,7 @@ dependencies = [
  "ropey",
  "servo-fontconfig",
  "unicode-segmentation",
+ "winapi",
 ]
 
 [[package]]
@@ -59,6 +73,12 @@ name = "cfg-if"
 version = "0.1.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4785bdd1c96b2a846b2bd7cc02e86b6b3dbf14e7e53446c4f54c92a361040822"
+
+[[package]]
+name = "checked-enum"
+version = "0.1.1-alpha1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8b78c70ae61ca2134341c436c8a4d78dff0d3383850d9508e1954b92f0ea8d0c"
 
 [[package]]
 name = "clap"
@@ -82,6 +102,28 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "81fb25b677f8bf1eb325017cb6bb8452f87969db0fedb4f757b297bee78a7c62"
 dependencies = [
  "cc",
+]
+
+[[package]]
+name = "com-impl"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "38eac2c76980ed0411ee41be7dfa0a3eece06bde9d4813e3cfaea07aedc63dbe"
+dependencies = [
+ "derive-com-impl",
+ "winapi",
+ "wio",
+]
+
+[[package]]
+name = "com-wrapper"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "793b09125320f19de1f0138fa620788ba7ea75166860defb702b4e2a75bbbb70"
+dependencies = [
+ "derive-com-wrapper",
+ "winapi",
+ "wio",
 ]
 
 [[package]]
@@ -122,6 +164,64 @@ dependencies = [
  "core-graphics",
  "foreign-types",
  "libc",
+]
+
+[[package]]
+name = "dcommon"
+version = "0.3.0-alpha1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "75db7ffa648a751330a163fd7d2829f59dca2eebbb54b8f7548580501ff1eb25"
+dependencies = [
+ "auto-enum",
+ "checked-enum",
+ "com-impl",
+ "com-wrapper",
+ "derive-com-impl",
+ "derive-com-wrapper",
+ "math2d",
+ "winapi",
+ "wio",
+]
+
+[[package]]
+name = "derive-com-impl"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "719bae05418f08f9088b78a9799554ea510e5513240078e079cd02e011078381"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
+name = "derive-com-wrapper"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7a92b98762b3a3a10381db5aefcda7f3416b3dfe30b4cbb6fa742c51b4d53f7d"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
+name = "directwrite"
+version = "0.3.0-alpha4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "277d3e7dafdeee693b73af98b3d0735fc0dbfac58880549a37f4087ab717aaac"
+dependencies = [
+ "auto-enum",
+ "checked-enum",
+ "com-impl",
+ "com-wrapper",
+ "dcommon",
+ "derive-com-impl",
+ "derive-com-wrapper",
+ "math2d",
+ "memmap",
+ "winapi",
+ "wio",
 ]
 
 [[package]]
@@ -297,10 +397,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "math2d"
+version = "0.2.0-alpha8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "45c2ccad3be816c820d4e586beeab876653595460486301d70968860d5913f54"
+dependencies = [
+ "winapi",
+]
+
+[[package]]
 name = "maybe-uninit"
 version = "2.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "60302e4db3a61da70c0cb7991976248362f30319e88850c487b9b95bbf059e00"
+
+[[package]]
+name = "memmap"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6585fd95e7bb50d6cc31e20d4cf9afb4e2ba16c5846fc76793f11218da9c475b"
+dependencies = [
+ "libc",
+ "winapi",
+]
 
 [[package]]
 name = "num-traits"
@@ -494,6 +613,15 @@ name = "winapi-x86_64-pc-windows-gnu"
 version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "712e227841d057c1ee1cd2fb22fa7e5a5461ae8e48fa2ca79ec42cfc1931183f"
+
+[[package]]
+name = "wio"
+version = "0.2.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5d129932f4644ac2396cb456385cbf9e63b5b30c6e8dc4820bdca4eb082037a5"
+dependencies = [
+ "winapi",
+]
 
 [[package]]
 name = "xml-rs"

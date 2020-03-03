@@ -37,9 +37,23 @@ impl RasterCore {
         }
     }
 
+    #[cfg(target_os = "unix")]
     pub(super) fn new_face(&self, path: &CStr, idx: u32) -> Option<RasterFace> {
         let mut face = MaybeUninit::uninit();
         let ret = unsafe { FT_New_Face(self.ft_lib, path.as_ptr(), idx as i64, face.as_mut_ptr()) };
+        if ret != 0 {
+            None
+        } else {
+            Some(RasterFace {
+                face: unsafe { face.assume_init() },
+            })
+        }
+    }
+
+    #[cfg(target_os = "windows")]
+    pub(super) fn new_face(&self, path: &CStr, idx: u32) -> Option<RasterFace> {
+        let mut face = MaybeUninit::uninit();
+        let ret = unsafe { FT_New_Face(self.ft_lib, path.as_ptr(), idx as i32, face.as_mut_ptr()) };
         if ret != 0 {
             None
         } else {
@@ -113,13 +127,34 @@ impl RasterFace {
         }
     }
 
+    #[cfg(target_os = "unix")]
     pub(in crate::ui) fn has_glyph_for_char(&self, c: char) -> bool {
         unsafe { FT_Get_Char_Index(self.face, c as u64) != 0 }
     }
 
+    #[cfg(target_os = "windows")]
+    pub(in crate::ui) fn has_glyph_for_char(&self, c: char) -> bool {
+        unsafe { FT_Get_Char_Index(self.face, c as u32) != 0 }
+    }
+
+    #[cfg(target_os = "unix")]
     fn set_char_size(&mut self, size: TextSize, dpi: Size2D<u32, DPI>) -> bool {
         let ft_size = size.to_64th_point();
         unsafe { FT_Set_Char_Size(self.face, ft_size, ft_size, dpi.width, dpi.height) == 0 }
+    }
+
+    #[cfg(target_os = "windows")]
+    fn set_char_size(&mut self, size: TextSize, dpi: Size2D<u32, DPI>) -> bool {
+        let ft_size = size.to_64th_point();
+        unsafe {
+            FT_Set_Char_Size(
+                self.face,
+                ft_size as i32,
+                ft_size as i32,
+                dpi.width,
+                dpi.height,
+            ) == 0
+        }
     }
 
     fn units_to_pixels_scale(&self, size: TextSize, dpi: Size2D<u32, DPI>) -> (f32, f32) {

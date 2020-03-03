@@ -7,13 +7,19 @@ use euclid::Size2D;
 
 use crate::types::{PixelSize, TextStyle};
 
-#[cfg(all(not(target_os = "windows"), not(target_os = "macos")))]
-mod fontconfig;
 mod freetype;
 pub(in crate::ui) mod harfbuzz;
 
+#[cfg(target_os = "windows")]
+mod direct_write;
+#[cfg(target_os = "windows")]
+use self::direct_write as source;
+
+#[cfg(all(not(target_os = "windows"), not(target_os = "macos")))]
+mod fontconfig;
 #[cfg(all(not(target_os = "windows"), not(target_os = "macos")))]
 use self::fontconfig as source;
+
 use self::freetype::RasterCore;
 pub(in crate::ui) use self::freetype::RasterFace;
 use self::harfbuzz::{HbBuffer, HbFont};
