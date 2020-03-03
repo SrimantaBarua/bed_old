@@ -14,7 +14,7 @@ use crate::types::{Color, PixelSize, TextSize, TextStyle, DPI};
 pub(super) struct RenderCtx {
     gl: Gl,
     projection_matrix: Mat4,
-    size: Size2D<u32, PixelSize>,
+    rect: Rect<u32, PixelSize>,
     dpi: Size2D<u32, DPI>,
     clear_color: Color,
     clr_quad_shader: ShaderProgram,
@@ -26,7 +26,7 @@ pub(super) struct RenderCtx {
 
 impl RenderCtx {
     pub(super) fn new(
-        size: Size2D<u32, PixelSize>,
+        rect: Rect<u32, PixelSize>,
         dpi: Size2D<u32, DPI>,
         clear_color: Color,
     ) -> RenderCtx {
@@ -40,8 +40,8 @@ impl RenderCtx {
             ShaderProgram::new(tex_clr_vsrc, tex_clr_fsrc).expect("failed to compile shader");
         RenderCtx {
             gl: Gl,
-            projection_matrix: Mat4::projection(size.cast()),
-            size: size,
+            projection_matrix: Mat4::projection(rect.size.cast()),
+            rect: rect,
             dpi: dpi,
             clear_color: clear_color,
             clr_quad_shader: clr_shader,
@@ -54,7 +54,7 @@ impl RenderCtx {
 
     pub(super) fn activate(&mut self, window: &mut glfw::Window) -> ActiveRenderCtx {
         let mut active_gl = self.gl.activate(window);
-        active_gl.viewport(Rect::new(point2(0, 0), self.size.cast()));
+        active_gl.viewport(self.rect.cast());
         let mut ret = ActiveRenderCtx {
             active_gl: active_gl,
             projection_matrix: &self.projection_matrix,
@@ -69,9 +69,9 @@ impl RenderCtx {
         ret
     }
 
-    pub(super) fn set_size(&mut self, size: Size2D<u32, PixelSize>) {
-        self.size = size;
-        self.projection_matrix = Mat4::projection(size);
+    pub(super) fn set_rect(&mut self, rect: Rect<u32, PixelSize>) {
+        self.rect = rect;
+        self.projection_matrix = Mat4::projection(rect.size);
     }
 }
 
