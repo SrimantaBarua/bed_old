@@ -5,7 +5,7 @@ use std::rc::Rc;
 use std::sync::mpsc::Receiver;
 use std::time;
 
-use euclid::{point2, size2, Rect, Size2D};
+use euclid::{point2, size2, Point2D, Rect, Size2D};
 use glfw::{Action, Context, Glfw, Key, Modifiers, WindowEvent, WindowMode};
 
 use crate::core::Core;
@@ -28,12 +28,23 @@ static CURSOR_COLOR: Color = Color::new(255, 128, 0, 196);
 #[cfg(target_os = "unix")]
 const FIXED_FONT: &'static str = "monospace";
 #[cfg(target_os = "windows")]
-const FIXED_FONT: &'static str = "Fira Code";
+const FIXED_FONT: &'static str = "Consolas";
 
 #[cfg(target_os = "unix")]
 const VARIABLE_FONT: &'static str = "sans";
 #[cfg(target_os = "windows")]
 const VARIABLE_FONT: &'static str = "Arial";
+
+// Horrible workaround because can't get things to work right on Windows
+#[cfg(target_os = "windows")]
+fn get_titlebar_height() -> u32 {
+    30
+}
+
+#[cfg(not(target_os = "windows"))]
+fn get_titlebar_height() -> u32 {
+    0
+}
 
 pub(crate) struct Window {
     window: glfw::Window,
@@ -86,10 +97,13 @@ impl Window {
             window.set_scroll_polling(true);
             window.set_refresh_polling(true);
             window.set_framebuffer_size_polling(true);
+            window.set_size(width as i32, height as i32);
             gl::load_with(|s| glfw.get_proc_address_raw(s));
             // Return stuff
             (window, events, dpi)
         };
+        // Workaround for correct height (damn you Windows)
+        let height = height - get_titlebar_height();
         // Initialie fonts
         let (fixed_face, variable_face) = {
             let fc = &mut *font_core.borrow_mut();
@@ -145,13 +159,15 @@ impl Window {
         let mut textview_scroll_a = (0.0, 0.0);
 
         // Apply friction
-        self.textview_scroll_v.0 = self.textview_scroll_v.0 * (7.0 / 8.0);
+        self.textview_scroll_v.0 = self.textview_scroll_v.0 * (3.0 / 8.0);
         self.textview_scroll_v.1 = self.textview_scroll_v.1 * (7.0 / 8.0);
 
         for (_, event) in glfw::flush_messages(events) {
             to_refresh = true;
             match event {
-                WindowEvent::FramebufferSize(w, h) => self.resize(size2(w as u32, h as u32)),
+                WindowEvent::FramebufferSize(w, h) => {
+                    self.resize(size2(w as u32, h as u32 - get_titlebar_height()))
+                }
                 WindowEvent::Scroll(x, y) => {
                     // Scroll acceleration accumulation
                     textview_scroll_a.0 -= x;
@@ -201,8 +217,7 @@ impl Window {
 
     fn resize(&mut self, size: Size2D<u32, PixelSize>) {
         self.render_ctx.set_size(size);
-        self.textview
-            .set_rect(Rect::new(point2(0, 0), size2(size.width, size.height)));
+        self.textview.set_rect(Rect::new(point2(0, 0), size));
     }
 
     fn handle_event(&mut self, event: WindowEvent) {

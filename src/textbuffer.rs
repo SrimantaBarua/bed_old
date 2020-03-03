@@ -17,7 +17,7 @@ use crate::types::{Color, TextPitch, TextSize, TextSlant, TextStyle, TextWeight}
 use crate::ui::text::{TextLine, TextSpan};
 
 static TEXT_FG_COLOR: Color = Color::new(64, 64, 64, 255);
-static TEXT_SIZE: f32 = 7.0;
+static TEXT_SIZE: f32 = 8.0;
 
 /// A cursor into the buffer. The buffer maintains references to all cursors, so they are
 /// updated on editing the buffer
