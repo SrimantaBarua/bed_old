@@ -252,9 +252,71 @@ impl TextView {
         self.snap_to_cursor();
     }
 
-    pub(super) fn page_up(&mut self) {}
+    pub(super) fn page_up(&mut self) {
+        self.ybase = 0;
+        let mut buf = String::new();
+        self.lines.clear();
+        let view = &mut self.views[self.cur_view_idx];
+        {
+            let font_core = &mut *self.font_core.borrow_mut();
+            let buffer = &mut *view.buffer.borrow_mut();
+            let pos = buffer.get_pos_at_line(view.start_line);
+            let mut linum = view.start_line;
+            let mut iter = buffer.fmt_lines_from_pos(&pos);
+            let mut height = 0;
+            while let Some(line) = iter.prev(&mut buf) {
+                let fmtline = TextViewLine::from_textline(
+                    line,
+                    self.fixed_face,
+                    self.variable_face,
+                    font_core,
+                    self.dpi,
+                );
 
-    pub(super) fn page_down(&mut self) {}
+                buf.clear();
+                write!(&mut buf, "{}", linum).unwrap();
+                let gutterline = TextViewLine::from_textstr(
+                    textstr(&buf, self.gutter_textsize, self.gutter_foreground_color),
+                    self.fixed_face,
+                    self.variable_face,
+                    font_core,
+                    self.dpi,
+                );
+
+                height += max(fmtline.metrics.height, gutterline.metrics.height);
+                view.start_line -= 1;
+                linum -= 1;
+                self.lines.push_front(fmtline);
+                self.gutter.push_front(gutterline);
+
+                if height >= self.rect.size.height {
+                    break;
+                }
+            }
+
+            let nlines = self.lines.len();
+            if nlines < 2 {
+                buffer.move_cursor_to_line(&mut view.cursor, view.start_line);
+            } else if view.cursor.line_num() > view.start_line + nlines - 2 {
+                buffer.move_cursor_to_line(&mut view.cursor, view.start_line + nlines - 2);
+            }
+        }
+        self.refresh();
+    }
+
+    pub(super) fn page_down(&mut self) {
+        let mut nlines = self.lines.len();
+        if nlines > 0 {
+            nlines -= 1;
+        }
+        let view = &mut self.views[self.cur_view_idx];
+        {
+            let buffer = &mut *view.buffer.borrow_mut();
+            buffer.move_cursor_down(&mut view.cursor, nlines);
+        }
+        view.start_line = view.cursor.line_num();
+        self.refresh();
+    }
 
     pub(super) fn go_to_line(&mut self, linum: usize) {
         {

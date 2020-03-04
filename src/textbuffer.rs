@@ -424,9 +424,21 @@ impl Buffer {
         self.delete_lines(cursor, nlines + 1);
     }
 
-    pub(crate) fn delete_to_line(&mut self, cursor: &mut BufferCursor, linum: usize) {}
+    pub(crate) fn delete_to_line(&mut self, cursor: &mut BufferCursor, linum: usize) {
+        let nlines = {
+            let cursor = &mut *cursor.inner.borrow_mut();
+            linum as isize - cursor.line_num as isize
+        };
+        if nlines < 0 {
+            self.delete_lines_up(cursor, (-nlines) as usize);
+        } else {
+            self.delete_lines_down(cursor, nlines as usize);
+        }
+    }
 
-    pub(crate) fn delete_to_last_line(&mut self, cursor: &mut BufferCursor) {}
+    pub(crate) fn delete_to_last_line(&mut self, cursor: &mut BufferCursor) {
+        self.delete_lines(cursor, self.data.len_lines());
+    }
 
     /// Insert character at given cursor position
     pub(crate) fn insert_char(&mut self, cursor: &mut BufferCursor, c: char) {
