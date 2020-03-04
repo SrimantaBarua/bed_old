@@ -25,12 +25,12 @@ static TEXTVIEW_BG_COLOR: Color = Color::new(255, 255, 255, 255);
 static CLEAR_COLOR: Color = Color::new(255, 255, 255, 255);
 static CURSOR_COLOR: Color = Color::new(255, 128, 0, 196);
 
-#[cfg(target_os = "unix")]
+#[cfg(target_os = "linux")]
 const FIXED_FONT: &'static str = "monospace";
 #[cfg(target_os = "windows")]
 const FIXED_FONT: &'static str = "Consolas";
 
-#[cfg(target_os = "unix")]
+#[cfg(target_os = "linux")]
 const VARIABLE_FONT: &'static str = "sans";
 #[cfg(target_os = "windows")]
 const VARIABLE_FONT: &'static str = "Arial";
@@ -162,8 +162,8 @@ impl Window {
         let mut textview_scroll_a = (0.0, 0.0);
 
         // Apply friction
-        self.textview_scroll_v.0 = self.textview_scroll_v.0 * (7.0 / 8.0);
-        self.textview_scroll_v.1 = self.textview_scroll_v.1 * (7.0 / 8.0);
+        self.textview_scroll_v.0 = (self.textview_scroll_v.0 * (3.0 / 8.0)).round();
+        self.textview_scroll_v.1 = (self.textview_scroll_v.1 * (3.0 / 8.0)).round();
 
         for (_, event) in glfw::flush_messages(events) {
             to_refresh = true;
@@ -179,13 +179,13 @@ impl Window {
         }
 
         // Apply accelation
-        let millis = duration.subsec_millis() as i32;
-        self.textview_scroll_v.0 += (millis as f64 * textview_scroll_a.0) / 12.0;
-        self.textview_scroll_v.1 += (millis as f64 * textview_scroll_a.1) / 12.0;
+        let millis = duration.subsec_millis() as f64;
+        self.textview_scroll_v.0 += (millis * textview_scroll_a.0) / 12.0;
+        self.textview_scroll_v.1 += (millis * textview_scroll_a.1) / 12.0;
 
         // Calculate delta
-        let textview_scroll_sx = (millis as f64 * self.textview_scroll_v.0) / 4.0;
-        let textview_scroll_sy = (millis as f64 * self.textview_scroll_v.1) / 4.0;
+        let textview_scroll_sx = (millis * self.textview_scroll_v.0) / 4.0;
+        let textview_scroll_sy = (millis * self.textview_scroll_v.1) / 4.0;
         let textview_scroll_s = (textview_scroll_sx, textview_scroll_sy);
 
         // If there is any velocity, we need to refresh
