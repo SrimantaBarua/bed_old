@@ -3,7 +3,7 @@
 use std::ffi::CStr;
 use std::ops::Drop;
 
-use euclid::{point2, Point2D, Rect, Size2D};
+use euclid::{point2, size2, Point2D, Rect, Size2D};
 
 use super::font::{FaceKey, RasterFace};
 use super::glyphrender::{ActiveGlyphRenderer, GlyphRenderer};
@@ -19,7 +19,7 @@ pub(super) struct RenderCtx {
     clear_color: Color,
     glyph_renderer: GlyphRenderer,
     // Framebuffers
-    framebuffers: [Framebuffer; 2],
+    framebuffers: [Framebuffer; 1],
     // shaders
     clr_quad_shader: ShaderProgram,
     tex_clr_quad_shader: ShaderProgram,
@@ -61,10 +61,7 @@ impl RenderCtx {
             clr_quad_arr: ElemArr::new(64),
             tex_clr_quad_arr: ElemArr::new(4096),
             tex_quad_arr: ElemArr::new(8),
-            framebuffers: [
-                Framebuffer::new(TexUnit::Texture1, rect.size),
-                Framebuffer::new(TexUnit::Texture2, rect.size),
-            ],
+            framebuffers: [Framebuffer::new(TexUnit::Texture1, rect.size)],
         }
     }
 
@@ -73,6 +70,7 @@ impl RenderCtx {
         active_gl.viewport(self.rect.cast());
         let mut ret = ActiveRenderCtx {
             active_gl: active_gl,
+            rect: self.rect,
             projection_matrix: &self.projection_matrix,
             dpi: self.dpi,
             clear_color: self.clear_color,
@@ -91,17 +89,19 @@ impl RenderCtx {
     pub(super) fn set_rect(&mut self, rect: Rect<u32, PixelSize>) {
         self.rect = rect;
         self.projection_matrix = Mat4::projection(rect.size);
+        self.framebuffers[0].resize(rect.size);
     }
 }
 
 pub(super) struct ActiveRenderCtx<'a> {
     active_gl: ActiveGl<'a>,
+    rect: Rect<u32, PixelSize>,
     projection_matrix: &'a Mat4,
     clear_color: Color,
     dpi: Size2D<u32, DPI>,
     active_glyph_renderer: ActiveGlyphRenderer<'a, 'a>,
     // framebuffers
-    framebuffers: &'a mut [Framebuffer; 2],
+    framebuffers: &'a mut [Framebuffer; 1],
     // shaders
     clr_quad_shader: &'a mut ShaderProgram,
     tex_clr_quad_shader: &'a mut ShaderProgram,
@@ -131,9 +131,33 @@ impl<'a> ActiveRenderCtx<'a> {
         ret
     }
 
+    pub(super) fn draw_shadow(&mut self, rect: Rect<i32, PixelSize>) {
+        self.framebuffers[0].bind();
+
+        {
+            let active_shader = self.clr_quad_shader.use_program(&mut self.active_gl);
+            self.clr_quad_arr
+                .push(ColorQuad::new(rect.cast(), Color::new(255, 0, 0, 255)));
+            self.clr_quad_arr.flush(&active_shader);
+        }
+
+        self.framebuffers[0].unbind();
+        self.framebuffers[0].bind_texture();
+
+        {
+            let active_shader = self.shadow_shader.use_program(&mut self.active_gl);
+            self.tex_quad_arr.push(TexQuad::new(
+                self.rect.cast(),
+                Rect::new(point2(0.0, 1.0), size2(1.0, -1.0)),
+            ));
+            self.tex_quad_arr.flush(&active_shader);
+        }
+    }
+
     fn set_uniforms(&mut self) {
         let projection = CStr::from_bytes_with_nul(b"projection\0").unwrap();
         let text = CStr::from_bytes_with_nul(b"text\0").unwrap();
+        let tex = CStr::from_bytes_with_nul(b"tex\0").unwrap();
         {
             let mut active_shader = self.clr_quad_shader.use_program(&mut self.active_gl);
             active_shader.uniform_mat4f(&projection, &self.projection_matrix);
@@ -142,6 +166,11 @@ impl<'a> ActiveRenderCtx<'a> {
             let mut active_shader = self.tex_clr_quad_shader.use_program(&mut self.active_gl);
             active_shader.uniform_mat4f(&projection, &self.projection_matrix);
             active_shader.uniform_1i(&text, 0);
+        }
+        {
+            let mut active_shader = self.shadow_shader.use_program(&mut self.active_gl);
+            active_shader.uniform_mat4f(&projection, &self.projection_matrix);
+            active_shader.uniform_1i(&tex, 1);
         }
     }
 }

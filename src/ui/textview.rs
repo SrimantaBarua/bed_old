@@ -589,15 +589,112 @@ impl TextView {
         if self.line_numbers {
             textview_rect.origin.x += self.gutter_width as i32;
             textview_rect.size.width -= self.gutter_width as i32;
+        }
 
-            let mut ctx = actx.get_widget_context(
-                Rect::new(
-                    self.rect.origin,
-                    size2(self.gutter_width, self.rect.size.height),
-                )
-                .cast(),
-                self.gutter_background_color,
-            );
+        {
+            let mut ctx = actx.get_widget_context(textview_rect, self.background_color);
+            let mut pos = point2(-(self.xbase as i32), -(self.ybase as i32));
+
+            let view = &mut self.views[self.cur_view_idx];
+            let cursor = &view.cursor;
+
+            for i in 0..self.lines.len() {
+                let linum = view.start_line + i;
+                let line = &self.lines[i];
+                let mut pos_here = pos;
+                pos_here.y += max(line.metrics.ascender, self.gutter[i].metrics.ascender);
+
+                let (
+                    mut grapheme,
+                    mut block_cursor_width,
+                    mut underline_y,
+                    mut underline_thickness,
+                ) = (0, pos_here.y, 10, 1);
+                let height = max(line.metrics.height, self.gutter[i].metrics.height) as i32;
+
+                for span in &line.spans {
+                    underline_y = pos_here.y - span.metrics.underline_pos;
+                    underline_thickness = span.metrics.underline_thickness;
+                    block_cursor_width = min(block_cursor_width, span.metrics.advance_width);
+
+                    let (_, face) = font_core.get(span.face, span.style).unwrap();
+                    for cluster in span.clusters() {
+                        let num_glyphs = cluster.glyph_infos.len();
+                        let glyphs_per_grapheme = num_glyphs / cluster.num_graphemes;
+
+                        for j in (0..num_glyphs).step_by(glyphs_per_grapheme) {
+                            let mut draw_cursor = false;
+                            if cursor.line_num() == linum && cursor.line_gidx() == grapheme {
+                                draw_cursor = true;
+                            }
+                            let mut width = 0;
+                            let cursor_x = pos_here.x;
+                            for gi in &cluster.glyph_infos[j..(j + glyphs_per_grapheme)] {
+                                ctx.glyph(
+                                    pos_here + gi.offset,
+                                    span.face,
+                                    gi.gid,
+                                    span.size,
+                                    span.color,
+                                    span.style,
+                                    &mut face.raster,
+                                );
+                                pos_here.x += gi.advance.width;
+                                width += gi.advance.width;
+                            }
+                            if draw_cursor {
+                                let (cursor_y, cursor_size) = match self.cursor_style {
+                                    TextCursorStyle::Beam => (pos.y, size2(2, height)),
+                                    TextCursorStyle::Block => (pos.y, size2(width, height)),
+                                    TextCursorStyle::Underline => {
+                                        (underline_y, size2(width, underline_thickness))
+                                    }
+                                };
+                                ctx.color_quad(
+                                    Rect::new(point2(cursor_x, cursor_y), cursor_size),
+                                    self.cursor_color,
+                                );
+                            }
+                            grapheme += 1;
+                        }
+                    }
+                }
+
+                let mut draw_cursor = false;
+                if cursor.line_num() == linum && cursor.line_gidx() == grapheme {
+                    draw_cursor = true;
+                }
+                if draw_cursor {
+                    let (cursor_y, cursor_size) = match self.cursor_style {
+                        TextCursorStyle::Beam => (pos.y, size2(2, height)),
+                        TextCursorStyle::Block => (pos.y, size2(block_cursor_width, height)),
+                        TextCursorStyle::Underline => {
+                            (underline_y, size2(block_cursor_width, underline_thickness))
+                        }
+                    };
+                    ctx.color_quad(
+                        Rect::new(point2(pos_here.x, cursor_y), cursor_size),
+                        self.cursor_color,
+                    );
+                }
+
+                pos.y += height;
+            }
+        }
+
+        if self.line_numbers {
+            let rect = Rect::new(
+                self.rect.origin,
+                size2(self.gutter_width, self.rect.size.height),
+            )
+            .cast();
+
+            if self.xbase > 0 {
+                let vec = point2(5, 0).to_vector();
+                actx.draw_shadow(rect.translate(vec));
+            }
+
+            let mut ctx = actx.get_widget_context(rect, self.gutter_background_color);
             let mut pos = point2(
                 (self.gutter_width - self.gutter_padding) as i32,
                 -(self.ybase as i32),
@@ -629,91 +726,6 @@ impl TextView {
 
                 pos.y += max(self.lines[i].metrics.height, gline.metrics.height) as i32;
             }
-        }
-
-        let mut ctx = actx.get_widget_context(textview_rect, self.background_color);
-        let mut pos = point2(-(self.xbase as i32), -(self.ybase as i32));
-
-        let view = &mut self.views[self.cur_view_idx];
-        let cursor = &view.cursor;
-
-        for i in 0..self.lines.len() {
-            let linum = view.start_line + i;
-            let line = &self.lines[i];
-            let mut pos_here = pos;
-            pos_here.y += max(line.metrics.ascender, self.gutter[i].metrics.ascender);
-
-            let (mut grapheme, mut block_cursor_width, mut underline_y, mut underline_thickness) =
-                (0, pos_here.y, 10, 1);
-            let height = max(line.metrics.height, self.gutter[i].metrics.height) as i32;
-
-            for span in &line.spans {
-                underline_y = pos_here.y - span.metrics.underline_pos;
-                underline_thickness = span.metrics.underline_thickness;
-                block_cursor_width = min(block_cursor_width, span.metrics.advance_width);
-
-                let (_, face) = font_core.get(span.face, span.style).unwrap();
-                for cluster in span.clusters() {
-                    let num_glyphs = cluster.glyph_infos.len();
-                    let glyphs_per_grapheme = num_glyphs / cluster.num_graphemes;
-
-                    for j in (0..num_glyphs).step_by(glyphs_per_grapheme) {
-                        let mut draw_cursor = false;
-                        if cursor.line_num() == linum && cursor.line_gidx() == grapheme {
-                            draw_cursor = true;
-                        }
-                        let mut width = 0;
-                        let cursor_x = pos_here.x;
-                        for gi in &cluster.glyph_infos[j..(j + glyphs_per_grapheme)] {
-                            ctx.glyph(
-                                pos_here + gi.offset,
-                                span.face,
-                                gi.gid,
-                                span.size,
-                                span.color,
-                                span.style,
-                                &mut face.raster,
-                            );
-                            pos_here.x += gi.advance.width;
-                            width += gi.advance.width;
-                        }
-                        if draw_cursor {
-                            let (cursor_y, cursor_size) = match self.cursor_style {
-                                TextCursorStyle::Beam => (pos.y, size2(2, height)),
-                                TextCursorStyle::Block => (pos.y, size2(width, height)),
-                                TextCursorStyle::Underline => {
-                                    (underline_y, size2(width, underline_thickness))
-                                }
-                            };
-                            ctx.color_quad(
-                                Rect::new(point2(cursor_x, cursor_y), cursor_size),
-                                self.cursor_color,
-                            );
-                        }
-                        grapheme += 1;
-                    }
-                }
-            }
-
-            let mut draw_cursor = false;
-            if cursor.line_num() == linum && cursor.line_gidx() == grapheme {
-                draw_cursor = true;
-            }
-            if draw_cursor {
-                let (cursor_y, cursor_size) = match self.cursor_style {
-                    TextCursorStyle::Beam => (pos.y, size2(2, height)),
-                    TextCursorStyle::Block => (pos.y, size2(block_cursor_width, height)),
-                    TextCursorStyle::Underline => {
-                        (underline_y, size2(block_cursor_width, underline_thickness))
-                    }
-                };
-                ctx.color_quad(
-                    Rect::new(point2(pos_here.x, cursor_y), cursor_size),
-                    self.cursor_color,
-                );
-            }
-
-            pos.y += height;
         }
     }
 

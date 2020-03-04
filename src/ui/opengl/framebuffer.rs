@@ -12,6 +12,7 @@ pub(in crate::ui) struct Framebuffer {
     tex: GlTexture<TexRGB>,
     rbo: Renderbuffer,
     fbo: GLuint,
+    unit: TexUnit,
 }
 
 impl Framebuffer {
@@ -45,10 +46,49 @@ impl Framebuffer {
                 tex: tex,
                 rbo: rbo,
                 fbo: fbo,
+                unit: unit,
             };
             ret.unbind();
             ret
         }
+    }
+
+    pub(in crate::ui) fn resize(&mut self, size: Size2D<u32, PixelSize>) {
+        unsafe {
+            gl::BindFramebuffer(gl::FRAMEBUFFER, self.fbo);
+
+            self.tex = GlTexture::new(self.unit, size);
+            gl::FramebufferTexture2D(
+                gl::FRAMEBUFFER,
+                gl::COLOR_ATTACHMENT0,
+                gl::TEXTURE_2D,
+                self.tex.id,
+                0,
+            );
+
+            self.rbo = Renderbuffer::new(size);
+            gl::FramebufferRenderbuffer(
+                gl::FRAMEBUFFER,
+                gl::DEPTH_STENCIL_ATTACHMENT,
+                gl::RENDERBUFFER,
+                self.rbo.id,
+            );
+
+            if gl::CheckFramebufferStatus(gl::FRAMEBUFFER) != gl::FRAMEBUFFER_COMPLETE {
+                panic!("framebuffer is not complete");
+            }
+            self.unbind();
+        }
+    }
+
+    pub(in crate::ui) fn bind(&mut self) {
+        unsafe {
+            gl::BindFramebuffer(gl::FRAMEBUFFER, self.fbo);
+        }
+    }
+
+    pub(in crate::ui) fn bind_texture(&mut self) {
+        self.tex.activate();
     }
 
     pub(in crate::ui) fn unbind(&mut self) {

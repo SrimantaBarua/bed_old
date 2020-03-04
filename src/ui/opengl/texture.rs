@@ -9,6 +9,7 @@ use gl::types::{GLenum, GLuint};
 
 use crate::types::{PixelSize, TextureSize};
 
+#[derive(Clone, Copy)]
 pub(in crate::ui) enum TexUnit {
     Texture0,
     Texture1,
