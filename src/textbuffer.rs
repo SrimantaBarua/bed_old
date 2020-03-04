@@ -49,6 +49,64 @@ struct BufferCursorInner {
     view_id: usize,
 }
 
+impl BufferCursorInner {
+    fn sync_from_and_udpate_char_idx_left(&mut self, data: &Rope, tabsize: usize) {
+        self.line_num = data.char_to_line(self.char_idx);
+        self.line_cidx = self.char_idx - data.line_to_char(self.line_num);
+        self.sync_line_cidx_gidx_left(data, tabsize);
+    }
+
+    fn sync_from_and_udpate_char_idx_right(&mut self, data: &Rope, tabsize: usize) {
+        self.line_num = data.char_to_line(self.char_idx);
+        self.line_cidx = self.char_idx - data.line_to_char(self.line_num);
+        self.sync_line_cidx_gidx_right(data, tabsize);
+    }
+
+    fn sync_line_cidx_gidx_left(&mut self, data: &Rope, tabsize: usize) {
+        let trimmed = trim_newlines(data.line(self.line_num));
+        let len_chars = trimmed.len_chars();
+        if self.line_cidx >= len_chars {
+            self.line_cidx = len_chars;
+            if !self.past_end && self.line_cidx > 0 {
+                self.line_cidx -= 1;
+            }
+        }
+        let (cidx, gidx) = cidx_gidx_from_cidx(&trimmed, self.line_cidx, tabsize);
+        self.line_cidx = cidx;
+        self.line_gidx = gidx;
+        self.line_global_x = self.line_gidx;
+        self.char_idx = data.line_to_char(self.line_num) + self.line_cidx;
+    }
+
+    fn sync_line_cidx_gidx_right(&mut self, data: &Rope, tabsize: usize) {
+        let trimmed = trim_newlines(data.line(self.line_num));
+        let len_chars = trimmed.len_chars();
+        if self.line_cidx > len_chars {
+            self.line_cidx = len_chars;
+        }
+        if !is_grapheme_boundary(&trimmed, self.line_cidx) {
+            self.line_cidx = next_grapheme_boundary(&trimmed, self.line_cidx);
+        }
+        if !self.past_end && self.line_cidx == len_chars && self.line_cidx > 0 {
+            self.line_cidx -= 1;
+        }
+        let (cidx, gidx) = cidx_gidx_from_cidx(&trimmed, self.line_cidx, tabsize);
+        self.line_cidx = cidx;
+        self.line_gidx = gidx;
+        self.line_global_x = self.line_gidx;
+        self.char_idx = data.line_to_char(self.line_num) + self.line_cidx;
+    }
+
+    fn sync_from_global_x(&mut self, data: &Rope, tabsize: usize) {
+        let trimmed = trim_newlines(data.line(self.line_num));
+        let (cidx, gidx) =
+            cidx_gidx_from_global_x(&trimmed, self.line_global_x, tabsize, self.past_end);
+        self.line_cidx = cidx;
+        self.line_gidx = gidx;
+        self.char_idx = data.line_to_char(self.line_num) + self.line_cidx;
+    }
+}
+
 /// A location within a buffer. This is invalidated on editing the buffer
 pub(crate) struct BufferPos {
     char_idx: usize,
@@ -140,7 +198,7 @@ impl Buffer {
         past_end: bool,
     ) -> BufferCursor {
         self.clean_cursors_except(view_id);
-        let strong = Rc::new(RefCell::new(BufferCursorInner {
+        let mut inner = BufferCursorInner {
             char_idx: pos.char_idx,
             line_num: pos.line_num,
             line_cidx: pos.line_cidx,
@@ -148,7 +206,18 @@ impl Buffer {
             line_global_x: pos.line_gidx,
             past_end: past_end,
             view_id: view_id,
-        }));
+        };
+        if !inner.past_end {
+            let trimmed = trim_newlines(self.data.line(inner.line_num));
+            if inner.line_cidx == trimmed.len_chars() && inner.line_cidx > 0 {
+                let (cidx, gidx) = cidx_gidx_from_cidx(&trimmed, inner.line_cidx - 1, self.tabsize);
+                inner.line_cidx = cidx;
+                inner.line_gidx = gidx;
+                inner.line_global_x = inner.line_gidx;
+                inner.char_idx = self.data.line_to_char(inner.line_num) + inner.line_cidx;
+            }
+        }
+        let strong = Rc::new(RefCell::new(inner));
         self.cursors.insert(view_id, Rc::downgrade(&strong));
         BufferCursor { inner: strong }
     }
@@ -156,16 +225,18 @@ impl Buffer {
     /// Delete to the left of cursor
     pub(crate) fn delete_left(&mut self, cursor: &mut BufferCursor, n: usize) {
         // Delete contents
-        let (cidx, view_id, diff) = {
+        let (start_cidx, end_cidx, view_id) = {
             let cursor = &mut *cursor.inner.borrow_mut();
+            if cursor.char_idx == 0 {
+                return;
+            }
             let cidx = if cursor.char_idx <= n {
                 0
             } else {
                 cursor.char_idx - n
             };
-            let diff = cursor.char_idx - cidx;
             self.data.remove(cidx..cursor.char_idx);
-            (cidx, cursor.view_id, diff)
+            (cidx, cursor.char_idx, cursor.view_id)
         };
 
         // Update cursors after current cursor position (inclusive of current cursor)
@@ -174,24 +245,22 @@ impl Buffer {
         for (_, weak) in self.cursors.iter_mut() {
             let strong = weak.upgrade().unwrap();
             let inner = &mut *strong.borrow_mut();
-            if inner.char_idx < cidx {
+            if inner.char_idx < start_cidx {
                 continue;
             }
-            inner.char_idx -= diff;
-            inner.line_num = self.data.char_to_line(inner.char_idx);
-            inner.line_cidx = inner.char_idx - self.data.line_to_char(inner.line_num);
-            let trimmed = trim_newlines(self.data.line(inner.line_num));
-            let (cidx, gidx) = cidx_gidx_from_cidx(&trimmed, inner.line_cidx, self.tabsize);
-            inner.line_cidx = cidx;
-            inner.line_gidx = gidx;
-            inner.line_global_x = inner.line_gidx;
+            if inner.char_idx <= end_cidx {
+                inner.char_idx = start_cidx;
+            } else {
+                inner.char_idx -= end_cidx - start_cidx;
+            }
+            inner.sync_from_and_udpate_char_idx_left(&self.data, self.tabsize);
         }
     }
 
     /// Delete to the right of cursor
     pub(crate) fn delete_right(&mut self, cursor: &mut BufferCursor, n: usize) {
         // Delete contents
-        let (original_cidx, final_cidx, view_id) = {
+        let (start_cidx, end_cidx, view_id) = {
             let cursor = &mut *cursor.inner.borrow_mut();
             let len_chars = self.data.len_chars();
             let final_cidx = if cursor.char_idx + n >= len_chars {
@@ -199,10 +268,12 @@ impl Buffer {
             } else {
                 cursor.char_idx + n
             };
+            if final_cidx == cursor.char_idx {
+                return;
+            }
             self.data.remove(cursor.char_idx..final_cidx);
             (cursor.char_idx, final_cidx, cursor.view_id)
         };
-        let diff = final_cidx - original_cidx;
 
         // Update cursors after current cursor position (inclusive of current cursor)
         self.clean_cursors_except(view_id);
@@ -210,21 +281,15 @@ impl Buffer {
         for (_, weak) in self.cursors.iter_mut() {
             let strong = weak.upgrade().unwrap();
             let inner = &mut *strong.borrow_mut();
-            if inner.char_idx < original_cidx {
+            if inner.char_idx < start_cidx {
                 continue;
             }
-            if inner.char_idx <= final_cidx {
-                inner.char_idx = original_cidx;
+            if inner.char_idx <= end_cidx {
+                inner.char_idx = start_cidx;
             } else {
-                inner.char_idx -= diff;
+                inner.char_idx -= end_cidx - start_cidx;
             }
-            inner.line_num = self.data.char_to_line(inner.char_idx);
-            inner.line_cidx = inner.char_idx - self.data.line_to_char(inner.line_num);
-            let trimmed = trim_newlines(self.data.line(inner.line_num));
-            let (cidx, gidx) = cidx_gidx_from_cidx(&trimmed, inner.line_cidx, self.tabsize);
-            inner.line_cidx = cidx;
-            inner.line_gidx = gidx;
-            inner.line_global_x = inner.line_gidx;
+            inner.sync_from_and_udpate_char_idx_left(&self.data, self.tabsize);
         }
     }
 
@@ -234,6 +299,9 @@ impl Buffer {
         let cursor = &mut *cursor.inner.borrow_mut();
         let cidx = self.data.line_to_char(cursor.line_num);
         let diff = cursor.char_idx - cidx;
+        if diff == 0 {
+            return;
+        }
         self.data.remove(cidx..cursor.char_idx);
         cursor.char_idx = cidx;
         cursor.line_cidx = 0;
@@ -242,7 +310,6 @@ impl Buffer {
 
         // Update cursors after current cursor position
         self.clean_cursors_except(cursor.view_id);
-        let trimmed = trim_newlines(self.data.line(cursor.line_num));
 
         for (&k, weak) in self.cursors.iter_mut() {
             if k == cursor.view_id {
@@ -256,16 +323,13 @@ impl Buffer {
             if inner.line_num == cursor.line_num {
                 if inner.line_cidx <= diff {
                     inner.char_idx = cidx;
-                    cursor.line_cidx = 0;
-                    cursor.line_gidx = 0;
-                    cursor.line_global_x = 0;
+                    inner.line_cidx = 0;
+                    inner.line_gidx = 0;
+                    inner.line_global_x = 0;
                 } else {
                     inner.char_idx -= diff;
                     inner.line_cidx -= diff;
-                    let (cidx, gidx) = cidx_gidx_from_cidx(&trimmed, inner.line_cidx, self.tabsize);
-                    inner.line_cidx = cidx;
-                    inner.line_gidx = gidx;
-                    inner.line_global_x = inner.line_gidx;
+                    inner.sync_line_cidx_gidx_left(&self.data, self.tabsize);
                 }
             } else {
                 inner.char_idx -= diff;
@@ -276,38 +340,29 @@ impl Buffer {
     /// Delete to the end of line
     pub(crate) fn delete_to_line_end(&mut self, cursor: &mut BufferCursor) {
         // Delete contents
-        let cursor = &mut *cursor.inner.borrow_mut();
-        let len_chars = trim_newlines(self.data.line(cursor.line_num)).len_chars();
-        self.data
-            .remove(cursor.char_idx..(cursor.char_idx + len_chars - cursor.line_cidx));
-        if !cursor.past_end && cursor.line_cidx > 0 {
-            cursor.line_cidx -= 1;
-        }
-        let trimmed = trim_newlines(self.data.line(cursor.line_num));
-        let (cidx, gidx) = cidx_gidx_from_cidx(&trimmed, cursor.line_cidx, self.tabsize);
-        cursor.line_cidx = cidx;
-        cursor.line_gidx = gidx;
-        cursor.line_global_x = cursor.line_gidx;
-        cursor.char_idx = self.data.line_to_char(cursor.line_num) + cursor.line_cidx;
+        let (linum, diff, view_id, char_idx) = {
+            let cursor = &mut *cursor.inner.borrow_mut();
+            let len_chars = trim_newlines(self.data.line(cursor.line_num)).len_chars();
+            let diff = len_chars - cursor.line_cidx;
+            if diff == 0 {
+                return;
+            }
+            self.data.remove(cursor.char_idx..(cursor.char_idx + diff));
+            (cursor.line_num, diff, cursor.view_id, cursor.char_idx)
+        };
 
         // Update cursors after current cursor position
-        self.clean_cursors_except(cursor.view_id);
-        for (&k, weak) in self.cursors.iter_mut() {
-            if k == cursor.view_id {
-                continue;
-            }
+        self.clean_cursors_except(view_id);
+        for (_, weak) in self.cursors.iter_mut() {
             let strong = weak.upgrade().unwrap();
             let inner = &mut *strong.borrow_mut();
-            if inner.char_idx <= cursor.char_idx {
+            if inner.char_idx < char_idx {
                 continue;
             }
-            if inner.line_num == cursor.line_num {
-                inner.char_idx = cursor.char_idx;
-                inner.line_cidx = cursor.line_cidx;
-                inner.line_gidx = cursor.line_gidx;
-                inner.line_global_x = cursor.line_gidx;
+            if inner.line_num == linum {
+                inner.sync_line_cidx_gidx_left(&self.data, self.tabsize);
             } else {
-                inner.char_idx = self.data.line_to_char(inner.line_num) + inner.line_cidx;
+                inner.char_idx -= diff;
             }
         }
     }
@@ -322,31 +377,25 @@ impl Buffer {
     pub(crate) fn insert_char(&mut self, cursor: &mut BufferCursor, c: char) {
         let (old_char_idx, view_id) = {
             let cursor = &mut *cursor.inner.borrow_mut();
+            self.data.insert_char(cursor.char_idx, c);
             (cursor.char_idx, cursor.view_id)
         };
 
-        // Insert character
-        self.data.insert_char(old_char_idx, c);
-
         // Update cursors after current cursor position (inclusive of current cursor)
         self.clean_cursors_except(view_id);
-        let slice = self.data.slice(..);
 
-        for (_, weak) in self.cursors.iter_mut() {
+        for (&k, weak) in self.cursors.iter_mut() {
             let strong = weak.upgrade().unwrap();
             let inner = &mut *strong.borrow_mut();
             if inner.char_idx < old_char_idx {
                 continue;
             }
-            inner.char_idx += 1;
-            if !is_grapheme_boundary(&slice, inner.char_idx) {
-                inner.char_idx = next_grapheme_boundary(&slice, inner.char_idx);
+            if inner.char_idx == old_char_idx && k != view_id {
+                inner.sync_line_cidx_gidx_right(&self.data, self.tabsize);
+                continue;
             }
-            inner.line_num = self.data.char_to_line(inner.char_idx);
-            inner.line_cidx = inner.char_idx - self.data.line_to_char(inner.line_num);
-            let line = self.data.line(inner.line_num);
-            inner.line_gidx = gidx_from_cidx(&line, inner.line_cidx, self.tabsize);
-            inner.line_global_x = inner.line_gidx;
+            inner.char_idx += 1;
+            inner.sync_from_and_udpate_char_idx_right(&self.data, self.tabsize);
         }
     }
 
@@ -363,23 +412,19 @@ impl Buffer {
 
         // Update cursors after current cursor position
         self.clean_cursors_except(view_id);
-        let slice = self.data.slice(..);
 
-        for (_, weak) in self.cursors.iter_mut() {
+        for (&k, weak) in self.cursors.iter_mut() {
             let strong = weak.upgrade().unwrap();
             let inner = &mut *strong.borrow_mut();
             if inner.char_idx < old_char_idx {
                 continue;
             }
-            inner.char_idx += ccount;
-            if !is_grapheme_boundary(&slice, inner.char_idx) {
-                inner.char_idx = next_grapheme_boundary(&slice, inner.char_idx);
+            if inner.char_idx == old_char_idx && k != view_id {
+                inner.sync_line_cidx_gidx_right(&self.data, self.tabsize);
+                continue;
             }
-            inner.line_num = self.data.char_to_line(inner.char_idx);
-            inner.line_cidx = inner.char_idx - self.data.line_to_char(inner.line_num);
-            let line = self.data.line(inner.line_num);
-            inner.line_gidx = gidx_from_cidx(&line, inner.line_cidx, self.tabsize);
-            inner.line_global_x = inner.line_gidx;
+            inner.char_idx += ccount;
+            inner.sync_from_and_udpate_char_idx_right(&self.data, self.tabsize);
         }
     }
 
@@ -398,16 +443,7 @@ impl Buffer {
         } else {
             cursor.line_num -= n;
         }
-        let trimmed = trim_newlines(self.data.line(cursor.line_num));
-        let (cidx, gidx) = cidx_gidx_from_global_x(
-            &trimmed,
-            cursor.line_global_x,
-            self.tabsize,
-            cursor.past_end,
-        );
-        cursor.line_cidx = cidx;
-        cursor.line_gidx = gidx;
-        cursor.char_idx = self.data.line_to_char(cursor.line_num) + cursor.line_cidx;
+        cursor.sync_from_global_x(&self.data, self.tabsize);
     }
 
     /// Move cursor n lines down
@@ -415,25 +451,10 @@ impl Buffer {
         let cursor = &mut *cursor.inner.borrow_mut();
         cursor.line_num += n;
         if cursor.line_num >= self.data.len_lines() {
-            let cidx = self.data.len_chars();
-            let linum = self.data.char_to_line(cidx);
-            let linoff = cidx - self.data.line_to_char(linum);
-            cursor.char_idx = cidx;
-            cursor.line_num = linum;
-            cursor.line_cidx = linoff;
-            cursor.line_gidx = gidx_from_cidx(&self.data.line(linum), linoff, self.tabsize);
-            cursor.line_global_x = cursor.line_gidx;
+            cursor.char_idx = self.data.len_chars();
+            cursor.sync_from_and_udpate_char_idx_left(&self.data, self.tabsize);
         } else {
-            let trimmed = trim_newlines(self.data.line(cursor.line_num));
-            let (cidx, gidx) = cidx_gidx_from_global_x(
-                &trimmed,
-                cursor.line_global_x,
-                self.tabsize,
-                cursor.past_end,
-            );
-            cursor.line_cidx = cidx;
-            cursor.line_gidx = gidx;
-            cursor.char_idx = self.data.line_to_char(cursor.line_num) + cursor.line_cidx;
+            cursor.sync_from_global_x(&self.data, self.tabsize);
         }
     }
 
@@ -446,36 +467,15 @@ impl Buffer {
             cursor.line_gidx = 0;
         } else {
             cursor.line_cidx -= n;
-            let line = self.data.line(cursor.line_num);
-            let (cidx, gidx) = cidx_gidx_from_cidx(&line, cursor.line_cidx, self.tabsize);
-            cursor.line_cidx = cidx;
-            cursor.line_gidx = gidx;
-            cursor.char_idx = self.data.line_to_char(cursor.line_num) + cursor.line_cidx;
+            cursor.sync_line_cidx_gidx_left(&self.data, self.tabsize);
         }
-        cursor.line_global_x = cursor.line_gidx;
     }
 
     /// Move cursor n chars to the right
-    pub(crate) fn move_cursor_right(&mut self, cursor: &mut BufferCursor, mut n: usize) {
+    pub(crate) fn move_cursor_right(&mut self, cursor: &mut BufferCursor, n: usize) {
         let cursor = &mut *cursor.inner.borrow_mut();
-        let line = self.data.line(cursor.line_num);
-        let trimmed = trim_newlines(line);
-        let mut len_chars = trimmed.len_chars();
-        if !cursor.past_end && len_chars > 0 {
-            len_chars -= 1;
-        }
-        if cursor.line_cidx + n >= len_chars {
-            n = len_chars - cursor.line_cidx;
-            if n == 0 {
-                return;
-            }
-        }
         cursor.line_cidx += n;
-        let (cidx, gidx) = cidx_gidx_from_cidx(&line, cursor.line_cidx, self.tabsize);
-        cursor.line_cidx = cidx;
-        cursor.line_gidx = gidx;
-        cursor.char_idx = self.data.line_to_char(cursor.line_num) + cursor.line_cidx;
-        cursor.line_global_x = cursor.line_gidx;
+        cursor.sync_line_cidx_gidx_right(&self.data, self.tabsize);
     }
 
     /// Move cursor to the start of line
@@ -490,8 +490,7 @@ impl Buffer {
     /// Move cursor to the end of line
     pub(crate) fn move_cursor_end_of_line(&mut self, cursor: &mut BufferCursor) {
         let cursor = &mut *cursor.inner.borrow_mut();
-        let line = self.data.line(cursor.line_num);
-        let trimmed = trim_newlines(line);
+        let trimmed = trim_newlines(self.data.line(cursor.line_num));
         let mut len_chars = trimmed.len_chars();
         if !cursor.past_end && len_chars > 0 {
             len_chars -= 1;
@@ -514,17 +513,7 @@ impl Buffer {
         }
         let cursor = &mut *cursor.inner.borrow_mut();
         cursor.line_num = linum;
-        let trimmed = trim_newlines(self.data.line(cursor.line_num));
-        let (cidx, gidx) = cidx_gidx_from_global_x(
-            &trimmed,
-            cursor.line_global_x,
-            self.tabsize,
-            cursor.past_end,
-        );
-        cursor.line_cidx = cidx;
-        cursor.line_gidx = gidx;
-        cursor.line_global_x = cursor.line_gidx;
-        cursor.char_idx = self.data.line_to_char(cursor.line_num) + cursor.line_cidx;
+        cursor.sync_from_global_x(&self.data, self.tabsize);
     }
 
     /// Move cursor to last line
