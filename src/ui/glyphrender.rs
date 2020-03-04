@@ -7,7 +7,7 @@ use euclid::{point2, size2, Point2D, Rect, Size2D};
 use guillotiere::{AllocId, AllocatorOptions, AtlasAllocator};
 
 use super::font::{FaceKey, RasterFace};
-use super::opengl::{ActiveShaderProgram, ElemArr, GlTexture, TexUnit};
+use super::opengl::{ActiveShaderProgram, ElemArr, GlTexture, TexRed, TexUnit};
 use super::quad::TexColorQuad;
 use crate::types::{Color, PixelSize, TextSize, TextStyle, DPI};
 
@@ -45,7 +45,7 @@ impl RenderedGlyph {
         rect: Rect<u32, PixelSize>,
         bearing: Size2D<i32, PixelSize>,
         alloc: AllocId,
-        tex: &mut GlTexture,
+        tex: &mut GlTexture<TexRed>,
         data: &[u8],
     ) -> RenderedGlyph {
         tex.sub_image(rect, data);
@@ -59,7 +59,7 @@ impl RenderedGlyph {
     fn to_tex_color_quad(
         &self,
         pos: Point2D<i32, PixelSize>,
-        atlas: &GlTexture,
+        atlas: &GlTexture<TexRed>,
         color: Color,
     ) -> TexColorQuad {
         let quad_rect = Rect::new(
@@ -76,7 +76,7 @@ impl RenderedGlyph {
 
 /// Handle to glyph renderer
 pub(super) struct GlyphRenderer {
-    atlas: GlTexture,
+    atlas: GlTexture<TexRed>,
     glyph_map: HashMap<GlyphKey, Option<RenderedGlyph>>,
     dpi: Size2D<u32, DPI>,
     allocator: AtlasAllocator,
@@ -119,7 +119,7 @@ impl GlyphRenderer {
 
 /// Handle to a glyph renderer with an activated texture
 pub(super) struct ActiveGlyphRenderer<'a, 'b> {
-    atlas: &'a mut GlTexture,
+    atlas: &'a mut GlTexture<TexRed>,
     glyph_map: &'a mut HashMap<GlyphKey, Option<RenderedGlyph>>,
     dpi: Size2D<u32, DPI>,
     allocator: &'a mut AtlasAllocator,

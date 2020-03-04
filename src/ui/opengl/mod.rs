@@ -9,12 +9,14 @@ use crate::types::{Color, PixelSize};
 
 #[macro_use]
 mod error;
+mod framebuffer;
 mod shader;
 mod texture;
 mod vert_array;
 
+pub(super) use framebuffer::Framebuffer;
 pub(super) use shader::{ActiveShaderProgram, ShaderProgram};
-pub(super) use texture::{GlTexture, TexUnit};
+pub(super) use texture::{GlTexture, TexRGB, TexRed, TexUnit};
 pub(super) use vert_array::{ElemArr, Element};
 
 /// Placeholder for a GL context that is not being used

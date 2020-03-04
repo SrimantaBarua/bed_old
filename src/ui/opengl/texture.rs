@@ -1,5 +1,6 @@
 // (C) 2020 Srimanta Barua <srimanta.barua1@gmail.com>
 
+use std::marker::PhantomData;
 use std::ops::Drop;
 use std::ptr;
 
@@ -8,10 +9,10 @@ use gl::types::{GLenum, GLuint};
 
 use crate::types::{PixelSize, TextureSize};
 
-#[derive(Clone, Copy, Eq, PartialEq)]
 pub(in crate::ui) enum TexUnit {
     Texture0,
     Texture1,
+    Texture2,
 }
 
 impl TexUnit {
@@ -19,19 +20,47 @@ impl TexUnit {
         match self {
             TexUnit::Texture0 => gl::TEXTURE0,
             TexUnit::Texture1 => gl::TEXTURE1,
+            TexUnit::Texture2 => gl::TEXTURE2,
         }
     }
 }
 
-/// Wrapper around OpenGL textures
-pub(in crate::ui) struct GlTexture {
-    id: GLuint,
-    unit: TexUnit,
-    size: Size2D<u32, PixelSize>,
+pub(in crate::ui) trait TexFormat {
+    fn format() -> GLenum;
 }
 
-impl GlTexture {
-    pub(in crate::ui) fn new(unit: TexUnit, size: Size2D<u32, PixelSize>) -> GlTexture {
+pub(in crate::ui) struct TexRGB;
+
+impl TexFormat for TexRGB {
+    fn format() -> GLenum {
+        gl::RGB
+    }
+}
+
+pub(in crate::ui) struct TexRed;
+
+impl TexFormat for TexRed {
+    fn format() -> GLenum {
+        gl::RED
+    }
+}
+
+/// Wrapper around OpenGL textures
+pub(in crate::ui) struct GlTexture<F>
+where
+    F: TexFormat,
+{
+    pub(super) id: GLuint,
+    unit: TexUnit,
+    size: Size2D<u32, PixelSize>,
+    phantom: PhantomData<F>,
+}
+
+impl<F> GlTexture<F>
+where
+    F: TexFormat,
+{
+    pub(in crate::ui) fn new(unit: TexUnit, size: Size2D<u32, PixelSize>) -> GlTexture<F> {
         let mut id = 0;
         unsafe {
             gl::GenTextures(1, &mut id);
@@ -44,11 +73,11 @@ impl GlTexture {
             gl::TexImage2D(
                 gl::TEXTURE_2D,
                 0,
-                gl::RED as i32,
+                F::format() as i32,
                 size.width as i32,
                 size.height as i32,
                 0,
-                gl::RED,
+                F::format(),
                 gl::UNSIGNED_BYTE,
                 ptr::null(),
             );
@@ -57,6 +86,7 @@ impl GlTexture {
             id: id,
             size: size,
             unit: unit,
+            phantom: PhantomData,
         }
     }
 
@@ -90,7 +120,7 @@ impl GlTexture {
                 rect.origin.y as i32,
                 rect.size.width as i32,
                 rect.size.height as i32,
-                gl::RED,
+                F::format(),
                 gl::UNSIGNED_BYTE,
                 data.as_ptr() as *const _,
             );
@@ -110,7 +140,10 @@ impl GlTexture {
     }
 }
 
-impl Drop for GlTexture {
+impl<F> Drop for GlTexture<F>
+where
+    F: TexFormat,
+{
     fn drop(&mut self) {
         unsafe {
             gl::DeleteTextures(1, &mut self.id);

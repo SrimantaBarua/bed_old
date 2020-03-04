@@ -7,8 +7,8 @@ use euclid::{point2, Point2D, Rect, Size2D};
 
 use super::font::{FaceKey, RasterFace};
 use super::glyphrender::{ActiveGlyphRenderer, GlyphRenderer};
-use super::opengl::{ActiveGl, ElemArr, Gl, Mat4, ShaderProgram};
-use super::quad::{ColorQuad, TexColorQuad};
+use super::opengl::{ActiveGl, ElemArr, Framebuffer, Gl, Mat4, ShaderProgram, TexUnit};
+use super::quad::{ColorQuad, TexColorQuad, TexQuad};
 use crate::types::{Color, PixelSize, TextSize, TextStyle, DPI};
 
 pub(super) struct RenderCtx {
@@ -17,11 +17,17 @@ pub(super) struct RenderCtx {
     rect: Rect<u32, PixelSize>,
     dpi: Size2D<u32, DPI>,
     clear_color: Color,
+    glyph_renderer: GlyphRenderer,
+    // Framebuffers
+    framebuffers: [Framebuffer; 2],
+    // shaders
     clr_quad_shader: ShaderProgram,
     tex_clr_quad_shader: ShaderProgram,
+    shadow_shader: ShaderProgram,
+    // arrays
     clr_quad_arr: ElemArr<ColorQuad>,
     tex_clr_quad_arr: ElemArr<TexColorQuad>,
-    glyph_renderer: GlyphRenderer,
+    tex_quad_arr: ElemArr<TexQuad>,
 }
 
 impl RenderCtx {
@@ -38,17 +44,27 @@ impl RenderCtx {
         let tex_clr_fsrc = include_str!("opengl/shader_src/tex_color_quad.frag");
         let tex_clr_shader =
             ShaderProgram::new(tex_clr_vsrc, tex_clr_fsrc).expect("failed to compile shader");
+        let shadow_vsrc = include_str!("opengl/shader_src/shadow.vert");
+        let shadow_fsrc = include_str!("opengl/shader_src/shadow.frag");
+        let shadow_shader =
+            ShaderProgram::new(shadow_vsrc, shadow_fsrc).expect("failed to compile shader");
         RenderCtx {
             gl: Gl,
             projection_matrix: Mat4::projection(rect.size.cast()),
             rect: rect,
             dpi: dpi,
             clear_color: clear_color,
+            glyph_renderer: GlyphRenderer::new(dpi),
             clr_quad_shader: clr_shader,
             tex_clr_quad_shader: tex_clr_shader,
+            shadow_shader: shadow_shader,
             clr_quad_arr: ElemArr::new(64),
             tex_clr_quad_arr: ElemArr::new(4096),
-            glyph_renderer: GlyphRenderer::new(dpi),
+            tex_quad_arr: ElemArr::new(8),
+            framebuffers: [
+                Framebuffer::new(TexUnit::Texture1, rect.size),
+                Framebuffer::new(TexUnit::Texture2, rect.size),
+            ],
         }
     }
 
@@ -62,7 +78,10 @@ impl RenderCtx {
             clear_color: self.clear_color,
             clr_quad_shader: &mut self.clr_quad_shader,
             tex_clr_quad_shader: &mut self.tex_clr_quad_shader,
+            shadow_shader: &mut self.shadow_shader,
+            tex_quad_arr: &mut self.tex_quad_arr,
             clr_quad_arr: &mut self.clr_quad_arr,
+            framebuffers: &mut self.framebuffers,
             active_glyph_renderer: self.glyph_renderer.activate(&mut self.tex_clr_quad_arr),
         };
         ret.set_uniforms();
@@ -80,10 +99,16 @@ pub(super) struct ActiveRenderCtx<'a> {
     projection_matrix: &'a Mat4,
     clear_color: Color,
     dpi: Size2D<u32, DPI>,
+    active_glyph_renderer: ActiveGlyphRenderer<'a, 'a>,
+    // framebuffers
+    framebuffers: &'a mut [Framebuffer; 2],
+    // shaders
     clr_quad_shader: &'a mut ShaderProgram,
     tex_clr_quad_shader: &'a mut ShaderProgram,
+    shadow_shader: &'a mut ShaderProgram,
+    // arrays
     clr_quad_arr: &'a mut ElemArr<ColorQuad>,
-    active_glyph_renderer: ActiveGlyphRenderer<'a, 'a>,
+    tex_quad_arr: &'a mut ElemArr<TexQuad>,
 }
 
 impl<'a> ActiveRenderCtx<'a> {

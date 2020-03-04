@@ -38,6 +38,43 @@ impl ColorQuad {
     }
 }
 
+pub(in crate::ui) struct TexQuad {
+    data: [f32; 16],
+}
+
+impl Element for TexQuad {
+    fn num_points_per_vertex() -> usize {
+        4
+    }
+
+    fn vertex_attributes() -> &'static [(i32, usize, usize)] {
+        &[(4, 4, 0)]
+    }
+
+    fn data(&self) -> &[f32] {
+        &self.data
+    }
+}
+
+impl TexQuad {
+    #[rustfmt::skip]
+    pub(in crate::ui) fn new(
+        quad_rect: Rect<f32, PixelSize>,
+        tex_rect: Rect<f32, TextureSize>,
+    ) -> TexQuad {
+        let qbox = quad_rect.to_box2d();
+        let tbox = tex_rect.to_box2d();
+        TexQuad {
+            data: [
+                qbox.min.x, qbox.min.y, tbox.min.x, tbox.min.y,
+                qbox.min.x, qbox.max.y, tbox.min.x, tbox.max.y,
+                qbox.max.x, qbox.min.y, tbox.max.x, tbox.min.y,
+                qbox.max.x, qbox.max.y, tbox.max.x, tbox.max.y,
+            ],
+        }
+    }
+}
+
 pub(in crate::ui) struct TexColorQuad {
     data: [f32; 32],
 }
