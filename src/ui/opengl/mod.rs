@@ -14,7 +14,7 @@ mod texture;
 mod vert_array;
 
 pub(super) use shader::{ActiveShaderProgram, ShaderProgram};
-pub(super) use texture::GlTexture;
+pub(super) use texture::{GlTexture, TexUnit};
 pub(super) use vert_array::{ElemArr, Element};
 
 /// Placeholder for a GL context that is not being used

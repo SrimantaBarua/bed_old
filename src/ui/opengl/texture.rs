@@ -4,21 +4,38 @@ use std::ops::Drop;
 use std::ptr;
 
 use euclid::{Rect, Size2D};
-use gl::types::GLuint;
+use gl::types::{GLenum, GLuint};
 
 use crate::types::{PixelSize, TextureSize};
 
+#[derive(Clone, Copy, Eq, PartialEq)]
+pub(in crate::ui) enum TexUnit {
+    Texture0,
+    Texture1,
+}
+
+impl TexUnit {
+    fn to_gl(&self) -> GLenum {
+        match self {
+            TexUnit::Texture0 => gl::TEXTURE0,
+            TexUnit::Texture1 => gl::TEXTURE1,
+        }
+    }
+}
+
 /// Wrapper around OpenGL textures
-pub(crate) struct GlTexture {
+pub(in crate::ui) struct GlTexture {
     id: GLuint,
+    unit: TexUnit,
     size: Size2D<u32, PixelSize>,
 }
 
 impl GlTexture {
-    pub(crate) fn new(size: Size2D<u32, PixelSize>) -> GlTexture {
+    pub(in crate::ui) fn new(unit: TexUnit, size: Size2D<u32, PixelSize>) -> GlTexture {
         let mut id = 0;
         unsafe {
             gl::GenTextures(1, &mut id);
+            gl::ActiveTexture(unit.to_gl());
             gl::BindTexture(gl::TEXTURE_2D, id);
             gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_WRAP_S, gl::CLAMP_TO_EDGE as i32);
             gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_WRAP_T, gl::CLAMP_TO_EDGE as i32);
@@ -36,29 +53,36 @@ impl GlTexture {
                 ptr::null(),
             );
         }
-        GlTexture { id: id, size: size }
+        GlTexture {
+            id: id,
+            size: size,
+            unit: unit,
+        }
     }
 
     /// Activate texture so that it can be used
-    pub(crate) fn activate(&mut self) {
+    pub(in crate::ui) fn activate(&mut self) {
         unsafe {
+            gl::ActiveTexture(self.unit.to_gl());
             gl::BindTexture(gl::TEXTURE_2D, self.id);
         }
     }
 
     /// Deactivate texture
-    pub(crate) fn deactivate(&mut self) {
+    pub(in crate::ui) fn deactivate(&mut self) {
         unsafe {
+            gl::ActiveTexture(self.unit.to_gl());
             gl::BindTexture(gl::TEXTURE_2D, 0);
         }
     }
 
     /// Fill texture sub-image
-    pub(crate) fn sub_image(&mut self, rect: Rect<u32, PixelSize>, data: &[u8]) {
+    pub(in crate::ui) fn sub_image(&mut self, rect: Rect<u32, PixelSize>, data: &[u8]) {
         let max = rect.max();
         assert!(max.x <= self.size.width, "texture coords out of bounds");
         assert!(max.y <= self.size.height, "texture coords out of bounds");
         unsafe {
+            gl::ActiveTexture(self.unit.to_gl());
             gl::TexSubImage2D(
                 gl::TEXTURE_2D,
                 0,
@@ -73,7 +97,10 @@ impl GlTexture {
         }
     }
 
-    pub(crate) fn get_tex_dimensions(&self, rect: Rect<u32, PixelSize>) -> Rect<f32, TextureSize> {
+    pub(in crate::ui) fn get_tex_dimensions(
+        &self,
+        rect: Rect<u32, PixelSize>,
+    ) -> Rect<f32, TextureSize> {
         let max = rect.max();
         assert!(max.x <= self.size.width, "texture coords out of bounds");
         assert!(max.y <= self.size.height, "texture coords out of bounds");

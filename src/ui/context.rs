@@ -65,7 +65,7 @@ impl RenderCtx {
             clr_quad_arr: &mut self.clr_quad_arr,
             active_glyph_renderer: self.glyph_renderer.activate(&mut self.tex_clr_quad_arr),
         };
-        ret.set_projection_matrix();
+        ret.set_uniforms();
         ret
     }
 
@@ -106,15 +106,17 @@ impl<'a> ActiveRenderCtx<'a> {
         ret
     }
 
-    fn set_projection_matrix(&mut self) {
-        let name = CStr::from_bytes_with_nul(b"projection\0").unwrap();
+    fn set_uniforms(&mut self) {
+        let projection = CStr::from_bytes_with_nul(b"projection\0").unwrap();
+        let text = CStr::from_bytes_with_nul(b"text\0").unwrap();
         {
             let mut active_shader = self.clr_quad_shader.use_program(&mut self.active_gl);
-            active_shader.uniform_mat4f(&name, &self.projection_matrix);
+            active_shader.uniform_mat4f(&projection, &self.projection_matrix);
         }
         {
             let mut active_shader = self.tex_clr_quad_shader.use_program(&mut self.active_gl);
-            active_shader.uniform_mat4f(&name, &self.projection_matrix);
+            active_shader.uniform_mat4f(&projection, &self.projection_matrix);
+            active_shader.uniform_1i(&text, 0);
         }
     }
 }

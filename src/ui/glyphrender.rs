@@ -7,7 +7,7 @@ use euclid::{point2, size2, Point2D, Rect, Size2D};
 use guillotiere::{AllocId, AllocatorOptions, AtlasAllocator};
 
 use super::font::{FaceKey, RasterFace};
-use super::opengl::{ActiveShaderProgram, ElemArr, GlTexture};
+use super::opengl::{ActiveShaderProgram, ElemArr, GlTexture, TexUnit};
 use super::quad::TexColorQuad;
 use crate::types::{Color, PixelSize, TextSize, TextStyle, DPI};
 
@@ -91,7 +91,7 @@ impl GlyphRenderer {
             large_size_threshold: 256,
         };
         GlyphRenderer {
-            atlas: GlTexture::new(size2(GL_TEX_SIZE, GL_TEX_SIZE)),
+            atlas: GlTexture::new(TexUnit::Texture0, size2(GL_TEX_SIZE, GL_TEX_SIZE)),
             glyph_map: HashMap::new(),
             dpi: dpi,
             allocator: AtlasAllocator::with_options(

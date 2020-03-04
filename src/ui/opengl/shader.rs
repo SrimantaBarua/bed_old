@@ -5,7 +5,7 @@ use std::marker::PhantomData;
 use std::ops::Drop;
 use std::str;
 
-use gl::types::{GLenum, GLuint};
+use gl::types::{GLenum, GLint, GLuint};
 
 use super::{ActiveGl, Mat4};
 
@@ -18,6 +18,13 @@ impl<'a, 'b> ActiveShaderProgram<'a, 'b> {
         unsafe {
             let loc = gl::GetUniformLocation(self.0, name.as_ptr());
             gl::UniformMatrix4fv(loc, 1, gl::FALSE, mat.as_ptr());
+        }
+    }
+
+    pub(in crate::ui) fn uniform_1i(&mut self, name: &CStr, i: GLint) {
+        unsafe {
+            let loc = gl::GetUniformLocation(self.0, name.as_ptr());
+            gl::Uniform1i(loc, i);
         }
     }
 }
