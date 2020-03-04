@@ -609,7 +609,7 @@ impl Window {
                     textview.set_cursor_style(TextCursorStyle::Block);
                     textview.delete_lines_up(act_mult * move_mult);
                 }
-                WindowEvent::Char('0') if state.action_multiplier.len() == 0 => {
+                WindowEvent::Char('0') if state.movement_multiplier.len() == 0 => {
                     state.action_multiplier.clear();
                     state.movement_multiplier.clear();
                     state.last_edit = EditOp::Delete(1, MovementOp::LineStart);

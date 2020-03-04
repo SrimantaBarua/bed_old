@@ -367,11 +367,66 @@ impl Buffer {
         }
     }
 
-    pub(crate) fn delete_lines_up(&mut self, cursor: &mut BufferCursor, nlines: usize) {}
+    pub(crate) fn delete_lines(&mut self, cursor: &mut BufferCursor, nlines: usize) {
+        let (start, end, linum, nlines, view_id) = {
+            let cursor = &mut *cursor.inner.borrow_mut();
+            let start = cursor.char_idx - cursor.line_cidx;
+            if start == self.data.len_chars() {
+                return;
+            }
+            let (nlines, end) = if cursor.line_num + nlines > self.data.len_lines() {
+                (
+                    self.data.len_lines() - cursor.line_num,
+                    self.data.len_chars(),
+                )
+            } else {
+                (nlines, self.data.line_to_char(cursor.line_num + nlines))
+            };
+            self.data.remove(start..end);
+            (start, end, cursor.line_num, nlines, cursor.view_id)
+        };
 
-    pub(crate) fn delete_lines_down(&mut self, cursor: &mut BufferCursor, nlines: usize) {}
+        // Update cursors after current cursor position
+        self.clean_cursors_except(view_id);
+        for (_, weak) in self.cursors.iter_mut() {
+            let strong = weak.upgrade().unwrap();
+            let inner = &mut *strong.borrow_mut();
+            if inner.char_idx <= start {
+                continue;
+            }
+            if inner.char_idx >= end {
+                inner.char_idx -= end - start;
+                inner.line_num -= nlines;
+                continue;
+            }
+            inner.char_idx = start;
+            inner.line_num = linum;
+            inner.line_cidx = 0;
+            inner.line_gidx = 0;
+            inner.line_global_x = 0;
+        }
+    }
+
+    pub(crate) fn delete_lines_up(&mut self, cursor: &mut BufferCursor, mut nlines: usize) {
+        {
+            let cursor = &mut *cursor.inner.borrow_mut();
+            if cursor.line_num < nlines {
+                nlines = cursor.line_num;
+            }
+            cursor.line_num -= nlines;
+            cursor.line_cidx = 0;
+            cursor.char_idx = self.data.line_to_char(cursor.line_num);
+        }
+        self.delete_lines(cursor, nlines + 1);
+    }
+
+    pub(crate) fn delete_lines_down(&mut self, cursor: &mut BufferCursor, nlines: usize) {
+        self.delete_lines(cursor, nlines + 1);
+    }
 
     pub(crate) fn delete_to_line(&mut self, cursor: &mut BufferCursor, linum: usize) {}
+
+    pub(crate) fn delete_to_last_line(&mut self, cursor: &mut BufferCursor) {}
 
     /// Insert character at given cursor position
     pub(crate) fn insert_char(&mut self, cursor: &mut BufferCursor, c: char) {

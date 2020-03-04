@@ -294,15 +294,55 @@ impl TextView {
         self.snap_to_cursor();
     }
 
-    pub(super) fn delete_lines(&mut self, n: usize) {}
+    pub(super) fn delete_lines(&mut self, nlines: usize) {
+        {
+            let view = &mut self.views[self.cur_view_idx];
+            let buffer = &mut *view.buffer.borrow_mut();
+            buffer.delete_lines(&mut view.cursor, nlines);
+        }
+        self.refresh();
+        self.snap_to_cursor();
+    }
 
-    pub(super) fn delete_lines_up(&mut self, nlines: usize) {}
+    pub(super) fn delete_lines_up(&mut self, nlines: usize) {
+        {
+            let view = &mut self.views[self.cur_view_idx];
+            let buffer = &mut *view.buffer.borrow_mut();
+            buffer.delete_lines_up(&mut view.cursor, nlines);
+        }
+        self.refresh();
+        self.snap_to_cursor();
+    }
 
-    pub(super) fn delete_lines_down(&mut self, nlines: usize) {}
+    pub(super) fn delete_lines_down(&mut self, nlines: usize) {
+        {
+            let view = &mut self.views[self.cur_view_idx];
+            let buffer = &mut *view.buffer.borrow_mut();
+            buffer.delete_lines_down(&mut view.cursor, nlines);
+        }
+        self.refresh();
+        self.snap_to_cursor();
+    }
 
-    pub(super) fn delete_to_line(&mut self, linum: usize) {}
+    pub(super) fn delete_to_line(&mut self, linum: usize) {
+        {
+            let view = &mut self.views[self.cur_view_idx];
+            let buffer = &mut *view.buffer.borrow_mut();
+            buffer.delete_to_line(&mut view.cursor, linum);
+        }
+        self.refresh();
+        self.snap_to_cursor();
+    }
 
-    pub(super) fn delete_to_last_line(&mut self) {}
+    pub(super) fn delete_to_last_line(&mut self) {
+        {
+            let view = &mut self.views[self.cur_view_idx];
+            let buffer = &mut *view.buffer.borrow_mut();
+            buffer.delete_to_last_line(&mut view.cursor);
+        }
+        self.refresh();
+        self.snap_to_cursor();
+    }
 
     pub(super) fn delete_to_line_start(&mut self) {
         {
