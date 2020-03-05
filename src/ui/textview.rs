@@ -127,6 +127,74 @@ impl TextView {
         self.snap_to_cursor();
     }
 
+    pub(super) fn move_cursor_to_point(&mut self, mut point: (i32, i32)) {
+        if point.0 < 0 {
+            point.0 = 0;
+        } else if point.0 > self.rect.size.width as i32 {
+            point.0 = self.rect.size.width as i32;
+        }
+        if point.1 < 0 {
+            point.1 = 0;
+        } else if point.1 > self.rect.size.height as i32 {
+            point.1 = self.rect.size.height as i32;
+        }
+        point.0 += self.xbase as i32;
+        point.1 += self.ybase as i32;
+        if self.line_numbers {
+            point.0 -= self.gutter_width as i32;
+        }
+        let mut height = 0;
+        let mut linum = 0;
+        for line in &self.lines {
+            height += line.metrics.height as i32;
+            if height >= point.1 {
+                break;
+            }
+            linum += 1;
+        }
+        let mut x = 0;
+        let mut gidx = 0;
+        'outer: for span in &self.lines[linum].spans {
+            for cluster in span.clusters() {
+                let num_glyphs = cluster.glyph_infos.len();
+                if num_glyphs % cluster.num_graphemes != 0 {
+                    let startx = x;
+                    for gi in cluster.glyph_infos {
+                        x += gi.advance.width;
+                    }
+                    if x < point.0 {
+                        continue;
+                    }
+                    let width = x - startx;
+                    let grapheme_width = width / cluster.num_graphemes as i32;
+                    gidx += width / grapheme_width;
+                    break 'outer;
+                } else {
+                    let glyphs_per_grapheme = num_glyphs / cluster.num_graphemes;
+                    for i in (0..num_glyphs).step_by(glyphs_per_grapheme) {
+                        for gi in &cluster.glyph_infos[i..(i + glyphs_per_grapheme)] {
+                            x += gi.advance.width;
+                            if x >= point.0 {
+                                break 'outer;
+                            }
+                        }
+                        gidx += 1;
+                    }
+                }
+            }
+        }
+        {
+            let view = &mut self.views[self.cur_view_idx];
+            let buffer = &mut *view.buffer.borrow_mut();
+            buffer.move_cursor_to_linum_gidx(
+                &mut view.cursor,
+                view.start_line + linum,
+                gidx as usize,
+            );
+        }
+        self.snap_to_cursor();
+    }
+
     pub(super) fn move_cursor_down(&mut self, n: usize) {
         {
             let view = &mut self.views[self.cur_view_idx];

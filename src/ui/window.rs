@@ -118,6 +118,7 @@ impl Window {
             window.set_scroll_polling(true);
             window.set_refresh_polling(true);
             window.set_framebuffer_size_polling(true);
+            window.set_mouse_button_polling(true);
             gl::load_with(|s| glfw.get_proc_address_raw(s));
             // Return stuff
             (window, events, dpi)
@@ -234,6 +235,10 @@ impl Window {
             to_refresh = true;
             match event {
                 WindowEvent::FramebufferSize(w, h) => self.resize(size2(w as u32, h as u32)),
+                WindowEvent::MouseButton(glfw::MouseButtonLeft, Action::Press, m) => {
+                    let (x, y) = self.window.get_cursor_pos();
+                    self.textview.move_cursor_to_point((x as i32, y as i32));
+                }
                 WindowEvent::Scroll(x, y) => {
                     // Scroll acceleration accumulation
                     a.0 -= x / m;

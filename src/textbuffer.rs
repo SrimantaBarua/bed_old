@@ -105,6 +105,15 @@ impl BufferCursorInner {
         self.line_gidx = gidx;
         self.char_idx = data.line_to_char(self.line_num) + self.line_cidx;
     }
+
+    fn sync_from_gidx(&mut self, data: &Rope, tabsize: usize) {
+        let trimmed = trim_newlines(data.line(self.line_num));
+        let (cidx, gidx) = cidx_gidx_from_gidx(&trimmed, self.line_gidx, tabsize, self.past_end);
+        self.line_cidx = cidx;
+        self.line_gidx = gidx;
+        self.line_global_x = self.line_gidx;
+        self.char_idx = data.line_to_char(self.line_num) + self.line_cidx;
+    }
 }
 
 /// A location within a buffer. This is invalidated on editing the buffer
@@ -495,6 +504,26 @@ impl Buffer {
         }
     }
 
+    /// Move cursor to given line number and gidx
+    pub(crate) fn move_cursor_to_linum_gidx(
+        &mut self,
+        cursor: &mut BufferCursor,
+        mut linum: usize,
+        gidx: usize,
+    ) {
+        let len_lines = self.data.len_lines();
+        if linum >= len_lines {
+            linum = len_lines;
+            if len_lines > 0 {
+                linum -= 1;
+            }
+        }
+        let cursor = &mut *cursor.inner.borrow_mut();
+        cursor.line_num = linum;
+        cursor.line_gidx = gidx;
+        cursor.sync_from_gidx(&self.data, self.tabsize);
+    }
+
     /// Move cursor n lines up
     pub(crate) fn move_cursor_up(&mut self, cursor: &mut BufferCursor, n: usize) {
         let cursor = &mut *cursor.inner.borrow_mut();
@@ -532,6 +561,7 @@ impl Buffer {
             cursor.char_idx -= cursor.line_cidx;
             cursor.line_cidx = 0;
             cursor.line_gidx = 0;
+            cursor.line_global_x = 0;
         } else {
             cursor.line_cidx -= n;
             cursor.sync_line_cidx_gidx_left(&self.data, self.tabsize);
@@ -845,6 +875,35 @@ fn cidx_gidx_from_cidx(slice: &RopeSlice, cidx: usize, tabsize: usize) -> (usize
     (ccount, gidx)
 }
 
+fn cidx_gidx_from_gidx(
+    slice: &RopeSlice,
+    gidx: usize,
+    tabsize: usize,
+    past_end: bool,
+) -> (usize, usize) {
+    let (mut gcount, mut cidx) = (0, 0);
+    let mut len_chars = slice.len_chars();
+    if !past_end && len_chars > 0 {
+        len_chars -= 1;
+    }
+    for g in RopeGraphemes::new(slice) {
+        if gcount >= gidx || cidx >= len_chars {
+            return (cidx, gcount);
+        }
+        let count_here = g.chars().count();
+        if cidx + count_here > len_chars {
+            return (cidx, gcount);
+        }
+        cidx += count_here;
+        if g == "\t" {
+            gcount = (gcount / tabsize) * tabsize + tabsize;
+        } else {
+            gcount += 1;
+        }
+    }
+    (cidx, gcount)
+}
+
 fn cidx_gidx_from_global_x(
     slice: &RopeSlice,
     global_x: usize,
@@ -852,8 +911,12 @@ fn cidx_gidx_from_global_x(
     past_end: bool,
 ) -> (usize, usize) {
     let (mut gidx, mut ccount) = (0, 0);
+    let mut len_chars = slice.len_chars();
+    if !past_end && len_chars > 0 {
+        len_chars -= 1;
+    }
     for g in RopeGraphemes::new(slice) {
-        if !past_end && ccount >= slice.len_chars() - 1 {
+        if ccount >= len_chars {
             return (ccount, gidx);
         }
         if gidx >= global_x {
