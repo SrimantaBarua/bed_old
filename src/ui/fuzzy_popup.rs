@@ -3,6 +3,7 @@
 use std::cell::RefCell;
 use std::cmp::{max, min};
 use std::rc::Rc;
+use std::sync::mpsc::{Receiver, TryRecvError};
 
 use euclid::{point2, size2, Rect, SideOffsets2D, Size2D};
 use unicode_segmentation::{GraphemeCursor, UnicodeSegmentation};
@@ -41,6 +42,7 @@ pub(super) struct FuzzyPopup {
     default_on_empty: bool,
     cursor_bidx: usize,
     cursor_gidx: usize,
+    async_source: Option<Receiver<String>>,
 }
 
 impl FuzzyPopup {
@@ -89,6 +91,7 @@ impl FuzzyPopup {
             default_on_empty: false,
             cursor_bidx: 0,
             cursor_gidx: 0,
+            async_source: None,
         };
         ret.refresh();
         ret
@@ -178,18 +181,46 @@ impl FuzzyPopup {
         }
     }
 
-    pub(super) fn push_string_choices(&mut self, choices: &[String]) {
-        self.choices.extend_from_slice(choices);
+    pub(super) fn set_async_source(&mut self, source: Receiver<String>) {
+        self.async_source = Some(source);
+    }
+
+    pub(super) fn update_from_async(&mut self) -> bool {
+        let mut found = false;
+        if let Some(source) = &self.async_source {
+            loop {
+                match source.try_recv() {
+                    Ok(s) => {
+                        self.choices.push(s);
+                        found = true;
+                    }
+                    Err(TryRecvError::Disconnected) => {
+                        self.async_source = None;
+                        break;
+                    }
+                    _ => break,
+                }
+            }
+        }
+        if found {
+            self.re_filter();
+        }
+        found
+    }
+
+    pub(super) fn re_filter(&mut self) {
         self.filter();
         self.refresh();
+    }
+
+    pub(super) fn push_string_choices(&mut self, choices: &[String]) {
+        self.choices.extend_from_slice(choices);
     }
 
     pub(super) fn push_str_choices(&mut self, choices: &[&str]) {
         for s in choices {
             self.choices.push(s.to_string());
         }
-        self.filter();
-        self.refresh();
     }
 
     pub(super) fn is_active(&self) -> bool {
@@ -206,6 +237,7 @@ impl FuzzyPopup {
     }
 
     pub(super) fn set_active(&mut self, val: bool) {
+        self.async_source = None;
         self.is_active = val;
         self.choices.clear();
         self.user_input.clear();
@@ -230,8 +262,6 @@ impl FuzzyPopup {
         self.user_input.push(c);
         self.cursor_bidx = next_grapheme_boundary(&self.user_input, self.cursor_bidx);
         self.cursor_gidx = bidx_to_gidx(&self.user_input, self.cursor_bidx);
-        self.filter();
-        self.refresh();
     }
 
     pub(super) fn delete_left(&mut self) {
@@ -251,8 +281,6 @@ impl FuzzyPopup {
             self.cursor_bidx = next_grapheme_boundary(&self.user_input, self.cursor_bidx);
         }
         self.cursor_gidx = bidx_to_gidx(&self.user_input, self.cursor_bidx);
-        self.filter();
-        self.refresh();
     }
 
     pub(super) fn resize(&mut self, window_size: Size2D<u32, PixelSize>) {
@@ -401,8 +429,8 @@ fn bidx_to_gidx(s: &str, bidx: usize) -> usize {
 
 fn fuzzy_search(haystack: &str, needle: &str) -> Option<usize> {
     let mut score = 0;
-    let mut hci = haystack.char_indices();
     for split in needle.split_whitespace() {
+        let mut hci = haystack.char_indices();
         for nc in split.chars() {
             let mut found = false;
             while let Some((i, hc)) = hci.next() {

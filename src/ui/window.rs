@@ -3,8 +3,9 @@
 use std::cell::RefCell;
 use std::path::PathBuf;
 use std::rc::Rc;
+use std::sync::mpsc::channel;
 use std::sync::mpsc::Receiver;
-use std::time;
+use std::{thread, time};
 
 #[cfg(target_os = "windows")]
 use euclid::SideOffsets2D;
@@ -35,7 +36,7 @@ static FUZZY_LABEL_COLOR: Color = Color::new(96, 96, 96, 255);
 static FUZZY_SELECT_COLOR: Color = Color::new(255, 100, 0, 255);
 static FUZZY_TEXT_SIZE: f32 = 8.0;
 
-static COMMANDS: [&'static str; 4] = ["quit", "write", "edit", "cd"];
+static COMMANDS: [&'static str; 6] = ["quit", "write", "edit", "cd", "buffer_prev", "buffer_next"];
 
 #[cfg(target_os = "linux")]
 const FIXED_FONT: &'static str = "monospace";
@@ -261,6 +262,11 @@ impl Window {
             self.textview.scroll(textview_scroll_s);
         }
 
+        // Update fuzzy finder async if required
+        if self.fuzzy_popup.is_active() {
+            to_refresh |= self.fuzzy_popup.update_from_async();
+        }
+
         to_refresh
     }
 
@@ -320,28 +326,27 @@ impl Window {
                         self.handling_command = Some("edit".to_owned());
                         self.fuzzy_popup.set_active(true);
                         self.fuzzy_popup.set_default_on_empty(true);
-                        let basename = self
-                            .working_directory
-                            .file_name()
-                            .unwrap()
-                            .to_str()
-                            .unwrap();
+                        let wdir = self.working_directory.clone();
+                        let basename = wdir.file_name().and_then(|p| p.to_str()).unwrap_or("/");
                         self.fuzzy_popup.set_input_label(basename);
-                        let paths = WalkDir::new(&self.working_directory)
-                            .into_iter()
-                            .filter_map(|e| {
-                                e.ok().and_then(|e| {
-                                    let mut path = e.path();
-                                    if path.is_file() {
-                                        path = path.strip_prefix(&self.working_directory).unwrap();
-                                        path.to_str().map(|s| s.to_string())
-                                    } else {
-                                        None
+
+                        let (tx, rx) = channel();
+                        thread::spawn(move || {
+                            for e in WalkDir::new(&wdir).into_iter().filter_map(|e| e.ok()) {
+                                let mut path = e.path();
+                                if path.is_file() {
+                                    path = path.strip_prefix(&wdir).unwrap();
+                                    if let Some(path) = path.to_str().map(|s| s.to_string()) {
+                                        if tx.send(path).is_err() {
+                                            break;
+                                        }
                                     }
-                                })
-                            })
-                            .collect::<Vec<_>>();
-                        self.fuzzy_popup.push_string_choices(&paths);
+                                }
+                            }
+                        });
+
+                        self.fuzzy_popup.set_async_source(rx);
+                        self.fuzzy_popup.update_from_async();
                     }
                     "write" => {
                         self.input_state.mode = InputMode::Normal;
@@ -509,6 +514,7 @@ impl Window {
                     self.fuzzy_popup.set_default_on_empty(false);
                     self.fuzzy_popup.set_input_label(":");
                     self.fuzzy_popup.push_str_choices(&COMMANDS);
+                    self.fuzzy_popup.re_filter();
                 }
                 WindowEvent::Key(Key::Down, _, Action::Press, _)
                 | WindowEvent::Key(Key::Down, _, Action::Repeat, _) => {
@@ -727,10 +733,12 @@ impl Window {
                 }
                 WindowEvent::Char(c) => {
                     self.fuzzy_popup.insert(c);
+                    self.fuzzy_popup.re_filter();
                 }
                 WindowEvent::Key(Key::Backspace, _, Action::Press, _)
                 | WindowEvent::Key(Key::Backspace, _, Action::Repeat, _) => {
                     self.fuzzy_popup.delete_left();
+                    self.fuzzy_popup.re_filter();
                 }
                 WindowEvent::Key(Key::Enter, _, Action::Press, _) => {
                     self.handle_command(self.fuzzy_popup.get_selection());
