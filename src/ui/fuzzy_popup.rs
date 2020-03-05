@@ -11,58 +11,7 @@ use crate::types::{Color, PixelSize, TextPitch, TextSize, TextStyle, DPI};
 
 use super::context::ActiveRenderCtx;
 use super::font::{FaceKey, FontCore};
-use super::text::{ShapedTextSpan, TextSpan};
-
-#[derive(Default)]
-struct FuzzyPopupLineMetrics {
-    ascender: i32,
-    descender: i32,
-    height: u32,
-    width: u32,
-}
-
-#[derive(Default)]
-struct FuzzyPopupLine {
-    metrics: FuzzyPopupLineMetrics,
-    spans: Vec<ShapedTextSpan>,
-}
-
-impl FuzzyPopupLine {
-    fn from_textstr(
-        span: TextSpan,
-        fixed_face: FaceKey,
-        variable_face: FaceKey,
-        font_core: &mut FontCore,
-        dpi: Size2D<u32, DPI>,
-    ) -> FuzzyPopupLine {
-        let mut spans = Vec::new();
-        let (mut ascender, mut descender, mut width) = (0, 0, 0);
-        for shaped_span in span.shaped_spans(fixed_face, variable_face, font_core, dpi) {
-            let span_metrics = &shaped_span.metrics;
-            if span_metrics.ascender > ascender {
-                ascender = span_metrics.ascender;
-            }
-            if span_metrics.descender < descender {
-                descender = span_metrics.descender;
-            }
-            for gi in shaped_span.glyph_infos.iter() {
-                width += gi.advance.width;
-            }
-            spans.push(shaped_span);
-        }
-        assert!(ascender > descender);
-        let metrics = FuzzyPopupLineMetrics {
-            ascender: ascender,
-            descender: descender,
-            height: (ascender - descender) as u32,
-            width: if width < 0 { 0 } else { width as u32 },
-        };
-        FuzzyPopupLine {
-            spans: spans,
-            metrics: metrics,
-        }
-    }
-}
+use super::text::{ShapedTextLine, TextCursorStyle, TextSpan};
 
 pub(super) struct FuzzyPopup {
     window_size: Size2D<u32, PixelSize>,
@@ -71,15 +20,17 @@ pub(super) struct FuzzyPopup {
     height: u32,
     edge_padding: u32,
     bottom_off: u32,
+    line_spacing: u32,
     background_color: Color,
     foreground_color: Color,
+    label_color: Color,
     selected_color: Color,
     cursor_color: Color,
     text_size: TextSize,
     face: FaceKey,
-    input_line: FuzzyPopupLine,
-    input_label: FuzzyPopupLine,
-    lines: Vec<FuzzyPopupLine>,
+    input_line: ShapedTextLine,
+    input_label: ShapedTextLine,
+    lines: Vec<ShapedTextLine>,
     dpi: Size2D<u32, DPI>,
     font_core: Rc<RefCell<FontCore>>,
     input_label_str: String,
@@ -99,8 +50,10 @@ impl FuzzyPopup {
         width_percentage: u32,
         edge_padding: u32,
         bottom_off: u32,
+        line_spacing: u32,
         background_color: Color,
         foreground_color: Color,
+        label_color: Color,
         selected_color: Color,
         cursor_color: Color,
         text_size: TextSize,
@@ -114,15 +67,17 @@ impl FuzzyPopup {
             width_percentage: width_percentage,
             edge_padding: edge_padding,
             bottom_off: bottom_off,
+            line_spacing: line_spacing,
             height: 0,
             background_color: background_color,
             foreground_color: foreground_color,
+            label_color: label_color,
             selected_color: selected_color,
             cursor_color: cursor_color,
             text_size: text_size,
             face: face,
-            input_line: FuzzyPopupLine::default(),
-            input_label: FuzzyPopupLine::default(),
+            input_line: ShapedTextLine::default(),
+            input_label: ShapedTextLine::default(),
             lines: Vec::new(),
             dpi: dpi,
             font_core: font_core,
@@ -157,124 +112,68 @@ impl FuzzyPopup {
         let inner_rect = rect.inner_rect(side_offsets);
 
         {
-            let vec = point2(5, 5).to_vector();
-            actx.draw_shadow(rect.translate(vec).cast());
+            let size = size2(rect.size.width + 5, rect.size.height + 5);
+            let shadow_rect = Rect::new(rect.origin, size);
+            actx.draw_shadow(shadow_rect.cast());
             let _ctx = actx.get_widget_context(rect.cast(), self.background_color);
         }
 
         let font_core = &mut *self.font_core.borrow_mut();
-        {
-            let mut ctx = actx.get_widget_context(inner_rect.cast(), self.background_color);
-            let mut pos = point2(0, inner_rect.size.height as i32);
-            pos.y += min(
-                self.input_line.metrics.descender,
-                self.input_label.metrics.descender,
-            ) as i32;
+        let mut ctx = actx.get_widget_context(inner_rect.cast(), self.background_color);
+        let mut pos = point2(0, inner_rect.size.height as i32);
+        pos.y += min(
+            self.input_line.metrics.descender,
+            self.input_label.metrics.descender,
+        ) as i32;
 
-            // Draw input label
-            let mut pos_here = pos;
-            for span in &self.input_label.spans {
-                let (_, face) = font_core.get(span.face, span.style).unwrap();
-                for cluster in span.clusters() {
-                    for gi in cluster.glyph_infos {
-                        ctx.glyph(
-                            pos_here + gi.offset,
-                            span.face,
-                            gi.gid,
-                            span.size,
-                            span.color,
-                            span.style,
-                            &mut face.raster,
-                        );
-                        pos_here.x += gi.advance.width;
-                    }
-                }
-            }
-            pos_here.x += 2;
-            let text_padding = pos_here.x;
+        // Draw input label
+        let mut pos_here = self.input_label.draw(
+            &mut ctx,
+            self.input_label.metrics.ascender,
+            self.input_label.metrics.height as i32,
+            pos,
+            font_core,
+            None,
+        );
+        pos_here.x += 5;
+        let text_padding = pos_here.x;
 
-            // Draw input line
-            let mut grapheme = 0;
-            for span in &self.input_line.spans {
-                let (_, face) = font_core.get(span.face, span.style).unwrap();
-                for cluster in span.clusters() {
-                    let num_glyphs = cluster.glyph_infos.len();
-                    let mut glyphs_per_grapheme = num_glyphs / cluster.num_graphemes;
-                    if glyphs_per_grapheme == 0 {
-                        glyphs_per_grapheme = 1;
-                    }
-                    for j in (0..num_glyphs).step_by(glyphs_per_grapheme) {
-                        if grapheme == self.cursor_gidx {
-                            ctx.color_quad(
-                                Rect::new(
-                                    point2(pos_here.x, pos.y - self.input_line.metrics.ascender),
-                                    size2(2, self.input_line.metrics.height).cast(),
-                                ),
-                                self.cursor_color,
-                            );
-                        }
-                        for gi in &cluster.glyph_infos[j..(j + glyphs_per_grapheme)] {
-                            ctx.glyph(
-                                pos_here + gi.offset,
-                                span.face,
-                                gi.gid,
-                                span.size,
-                                span.color,
-                                span.style,
-                                &mut face.raster,
-                            );
-                            pos_here.x += gi.advance.width;
-                        }
-                        grapheme += 1;
-                    }
+        // Draw input line
+        self.input_line.draw(
+            &mut ctx,
+            self.input_line.metrics.ascender,
+            self.input_line.metrics.height as i32,
+            pos_here,
+            font_core,
+            Some((self.cursor_gidx, TextCursorStyle::Beam, self.cursor_color)),
+        );
+        pos.y -= max(
+            self.input_line.metrics.ascender,
+            self.input_label.metrics.ascender,
+        ) as i32;
+
+        // Draw selection lines
+        if self.lines.len() > 0 {
+            pos.y -= (self.lines[0].metrics.height + 2 * self.line_spacing) as i32;
+            let rect = Rect::new(pos, size2(width, self.lines[0].metrics.height).cast());
+            ctx.color_quad(rect, Color::new(0, 0, 0, 8));
+
+            for i in 0..self.lines.len() {
+                let line = &self.lines[i];
+                if i > 0 {
+                    pos.y -= (line.metrics.height + 2 * self.line_spacing) as i32;
                 }
-            }
-            if grapheme == self.cursor_gidx {
-                ctx.color_quad(
-                    Rect::new(
-                        point2(pos_here.x, pos.y - self.input_line.metrics.ascender),
-                        size2(2, self.input_line.metrics.height).cast(),
-                    ),
-                    self.cursor_color,
+                let mut pos_here = pos;
+                pos_here.x += text_padding;
+                pos_here.y += line.metrics.ascender;
+                line.draw(
+                    &mut ctx,
+                    line.metrics.ascender,
+                    line.metrics.height as i32,
+                    pos_here,
+                    font_core,
+                    None,
                 );
-            }
-            pos.y -= max(
-                self.input_line.metrics.ascender,
-                self.input_label.metrics.ascender,
-            ) as i32;
-
-            // Draw selection lines
-            if self.lines.len() > 0 {
-                pos.y -= self.lines[0].metrics.height as i32;
-                let rect = Rect::new(pos, size2(width, self.lines[0].metrics.height).cast());
-                ctx.color_quad(rect, Color::new(0, 0, 0, 8));
-
-                for i in 0..self.lines.len() {
-                    let line = &self.lines[i];
-                    if i > 0 {
-                        pos.y -= line.metrics.height as i32;
-                    }
-                    let mut pos_here = pos;
-                    pos_here.x += text_padding;
-                    pos_here.y += line.metrics.ascender;
-                    for span in &line.spans {
-                        let (_, face) = font_core.get(span.face, span.style).unwrap();
-                        for cluster in span.clusters() {
-                            for gi in cluster.glyph_infos {
-                                ctx.glyph(
-                                    pos_here + gi.offset,
-                                    span.face,
-                                    gi.gid,
-                                    span.size,
-                                    span.color,
-                                    span.style,
-                                    &mut face.raster,
-                                );
-                                pos_here.x += gi.advance.width;
-                            }
-                        }
-                    }
-                }
             }
         }
     }
@@ -384,7 +283,7 @@ impl FuzzyPopup {
         let font_core = &mut *self.font_core.borrow_mut();
 
         self.input_line = if self.user_input.len() == 0 {
-            FuzzyPopupLine::from_textstr(
+            ShapedTextLine::from_textstr(
                 TextSpan::new(
                     " ",
                     self.text_size,
@@ -399,7 +298,7 @@ impl FuzzyPopup {
                 self.dpi,
             )
         } else {
-            FuzzyPopupLine::from_textstr(
+            ShapedTextLine::from_textstr(
                 TextSpan::new(
                     &self.user_input,
                     self.text_size,
@@ -416,12 +315,12 @@ impl FuzzyPopup {
         };
 
         self.input_label = if self.input_label_str.len() == 0 {
-            FuzzyPopupLine::from_textstr(
+            ShapedTextLine::from_textstr(
                 TextSpan::new(
                     " ",
                     self.text_size,
                     TextStyle::default(),
-                    self.foreground_color,
+                    self.label_color,
                     TextPitch::Variable,
                     None,
                 ),
@@ -431,12 +330,12 @@ impl FuzzyPopup {
                 self.dpi,
             )
         } else {
-            FuzzyPopupLine::from_textstr(
+            ShapedTextLine::from_textstr(
                 TextSpan::new(
                     &self.input_label_str,
                     self.text_size,
                     TextStyle::default(),
-                    self.foreground_color,
+                    self.label_color,
                     TextPitch::Variable,
                     None,
                 ),
@@ -450,10 +349,11 @@ impl FuzzyPopup {
         self.height = max(
             self.input_line.metrics.height,
             self.input_label.metrics.height,
-        ) + self.edge_padding * 2;
+        ) + self.edge_padding * 2
+            + self.line_spacing;
 
         for (_, line) in &self.filtered {
-            let fmtline = FuzzyPopupLine::from_textstr(
+            let fmtline = ShapedTextLine::from_textstr(
                 TextSpan::new(
                     line,
                     self.text_size,
@@ -467,10 +367,12 @@ impl FuzzyPopup {
                 font_core,
                 self.dpi,
             );
-            if self.height + self.bottom_off + fmtline.metrics.height > max_height {
+            if self.height + self.bottom_off + self.line_spacing * 2 + fmtline.metrics.height
+                > max_height
+            {
                 break;
             }
-            self.height += fmtline.metrics.height;
+            self.height += fmtline.metrics.height + self.line_spacing * 2;
             self.lines.push(fmtline);
         }
     }
@@ -500,17 +402,19 @@ fn bidx_to_gidx(s: &str, bidx: usize) -> usize {
 fn fuzzy_search(haystack: &str, needle: &str) -> Option<usize> {
     let mut score = 0;
     let mut hci = haystack.char_indices();
-    for nc in needle.chars() {
-        let mut found = false;
-        while let Some((i, hc)) = hci.next() {
-            if hc == nc {
-                score += i;
-                found = true;
-                break;
+    for split in needle.split_whitespace() {
+        for nc in split.chars() {
+            let mut found = false;
+            while let Some((i, hc)) = hci.next() {
+                if hc == nc {
+                    score += i;
+                    found = true;
+                    break;
+                }
             }
-        }
-        if !found {
-            return None;
+            if !found {
+                return None;
+            }
         }
     }
     Some(score)

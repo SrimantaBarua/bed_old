@@ -31,8 +31,9 @@ static CLEAR_COLOR: Color = Color::new(255, 255, 255, 255);
 static CURSOR_COLOR: Color = Color::new(255, 128, 0, 196);
 static FUZZY_BG_COLOR: Color = Color::new(255, 255, 255, 255);
 static FUZZY_FG_COLOR: Color = Color::new(128, 128, 128, 255);
+static FUZZY_LABEL_COLOR: Color = Color::new(96, 96, 96, 255);
 static FUZZY_SELECT_COLOR: Color = Color::new(255, 100, 0, 255);
-static FUZZY_TEXT_SIZE: f32 = 9.0;
+static FUZZY_TEXT_SIZE: f32 = 8.0;
 
 static COMMANDS: [&'static str; 4] = ["quit", "write", "edit", "cd"];
 
@@ -155,8 +156,10 @@ impl Window {
             80,
             10,
             10,
+            2,
             FUZZY_BG_COLOR,
             FUZZY_FG_COLOR,
+            FUZZY_LABEL_COLOR,
             FUZZY_SELECT_COLOR,
             CURSOR_COLOR,
             TextSize::from_f32(FUZZY_TEXT_SIZE),

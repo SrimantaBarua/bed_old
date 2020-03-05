@@ -13,99 +13,12 @@ use crate::types::{Color, PixelSize, TextPitch, TextSize, TextStyle, DPI};
 
 use super::context::ActiveRenderCtx;
 use super::font::{FaceKey, FontCore};
-use super::text::{ShapedTextSpan, TextCursorStyle, TextLine, TextSpan};
+use super::text::{ShapedTextLine, TextCursorStyle, TextSpan};
 
 struct View {
     start_line: usize,
     buffer: Rc<RefCell<Buffer>>,
     cursor: BufferCursor,
-}
-
-struct TextViewLineMetrics {
-    ascender: i32,
-    descender: i32,
-    height: u32,
-    width: u32,
-}
-
-struct TextViewLine {
-    metrics: TextViewLineMetrics,
-    spans: Vec<ShapedTextSpan>,
-}
-
-impl TextViewLine {
-    fn from_textline(
-        line: TextLine,
-        fixed_face: FaceKey,
-        variable_face: FaceKey,
-        font_core: &mut FontCore,
-        dpi: Size2D<u32, DPI>,
-    ) -> TextViewLine {
-        assert!(line.0.len() > 0);
-        let mut spans = Vec::new();
-        let (mut ascender, mut descender, mut width) = (0, 0, 0);
-        for span in line.0 {
-            for shaped_span in span.shaped_spans(fixed_face, variable_face, font_core, dpi) {
-                let span_metrics = &shaped_span.metrics;
-                if span_metrics.ascender > ascender {
-                    ascender = span_metrics.ascender;
-                }
-                if span_metrics.descender < descender {
-                    descender = span_metrics.descender;
-                }
-                for gi in shaped_span.glyph_infos.iter() {
-                    width += gi.advance.width;
-                }
-                spans.push(shaped_span);
-            }
-        }
-        assert!(ascender > descender);
-        let metrics = TextViewLineMetrics {
-            ascender: ascender,
-            descender: descender,
-            height: (ascender - descender) as u32,
-            width: if width < 0 { 0 } else { width as u32 },
-        };
-        TextViewLine {
-            spans: spans,
-            metrics: metrics,
-        }
-    }
-
-    fn from_textstr(
-        span: TextSpan,
-        fixed_face: FaceKey,
-        variable_face: FaceKey,
-        font_core: &mut FontCore,
-        dpi: Size2D<u32, DPI>,
-    ) -> TextViewLine {
-        let mut spans = Vec::new();
-        let (mut ascender, mut descender, mut width) = (0, 0, 0);
-        for shaped_span in span.shaped_spans(fixed_face, variable_face, font_core, dpi) {
-            let span_metrics = &shaped_span.metrics;
-            if span_metrics.ascender > ascender {
-                ascender = span_metrics.ascender;
-            }
-            if span_metrics.descender < descender {
-                descender = span_metrics.descender;
-            }
-            for gi in shaped_span.glyph_infos.iter() {
-                width += gi.advance.width;
-            }
-            spans.push(shaped_span);
-        }
-        assert!(ascender > descender);
-        let metrics = TextViewLineMetrics {
-            ascender: ascender,
-            descender: descender,
-            height: (ascender - descender) as u32,
-            width: if width < 0 { 0 } else { width as u32 },
-        };
-        TextViewLine {
-            spans: spans,
-            metrics: metrics,
-        }
-    }
 }
 
 pub(super) struct TextView {
@@ -115,8 +28,8 @@ pub(super) struct TextView {
     background_color: Color,
     fixed_face: FaceKey,
     variable_face: FaceKey,
-    lines: VecDeque<TextViewLine>,
-    gutter: VecDeque<TextViewLine>,
+    lines: VecDeque<ShapedTextLine>,
+    gutter: VecDeque<ShapedTextLine>,
     gutter_width: u32,
     gutter_padding: u32,
     gutter_textsize: TextSize,
@@ -196,6 +109,8 @@ impl TextView {
             cursor: cursor,
         });
         self.cur_view_idx += 1;
+        self.xbase = 0;
+        self.ybase = 0;
         self.refresh();
     }
 
@@ -279,7 +194,7 @@ impl TextView {
             let mut iter = buffer.fmt_lines_from_pos(&pos);
             let mut height = 0;
             while let Some(line) = iter.prev(&mut buf) {
-                let fmtline = TextViewLine::from_textline(
+                let fmtline = ShapedTextLine::from_textline(
                     line,
                     self.fixed_face,
                     self.variable_face,
@@ -289,7 +204,7 @@ impl TextView {
 
                 buf.clear();
                 write!(&mut buf, "{}", linum).unwrap();
-                let gutterline = TextViewLine::from_textstr(
+                let gutterline = ShapedTextLine::from_textstr(
                     textstr(&buf, self.gutter_textsize, self.gutter_foreground_color),
                     self.fixed_face,
                     self.variable_face,
@@ -485,7 +400,7 @@ impl TextView {
                 let mut linum = view.start_line;
                 let mut iter = buffer.fmt_lines_from_pos(&pos);
                 while let Some(line) = iter.prev(&mut buf) {
-                    let fmtline = TextViewLine::from_textline(
+                    let fmtline = ShapedTextLine::from_textline(
                         line,
                         self.fixed_face,
                         self.variable_face,
@@ -495,7 +410,7 @@ impl TextView {
 
                     buf.clear();
                     write!(&mut buf, "{}", linum).unwrap();
-                    let gutterline = TextViewLine::from_textstr(
+                    let gutterline = ShapedTextLine::from_textstr(
                         textstr(&buf, self.gutter_textsize, self.gutter_foreground_color),
                         self.fixed_face,
                         self.variable_face,
@@ -544,7 +459,7 @@ impl TextView {
 
                     let mut iter = buffer.fmt_lines_from_pos(&pos);
                     while let Some(line) = iter.next(&mut buf) {
-                        let fmtline = TextViewLine::from_textline(
+                        let fmtline = ShapedTextLine::from_textline(
                             line,
                             self.fixed_face,
                             self.variable_face,
@@ -554,7 +469,7 @@ impl TextView {
 
                         buf.clear();
                         write!(&mut buf, "{}", linum).unwrap();
-                        let gutterline = TextViewLine::from_textstr(
+                        let gutterline = ShapedTextLine::from_textstr(
                             textstr(&buf, self.gutter_textsize, self.gutter_foreground_color),
                             self.fixed_face,
                             self.variable_face,
@@ -610,88 +525,24 @@ impl TextView {
             let mut pos = point2(-(self.xbase as i32), -(self.ybase as i32));
 
             let view = &mut self.views[self.cur_view_idx];
-            let cursor = &view.cursor;
 
             for i in 0..self.lines.len() {
                 let linum = view.start_line + i;
                 let line = &self.lines[i];
-                let mut pos_here = pos;
-                pos_here.y += max(line.metrics.ascender, self.gutter[i].metrics.ascender);
-
-                let (
-                    mut grapheme,
-                    mut block_cursor_width,
-                    mut underline_y,
-                    mut underline_thickness,
-                ) = (0, pos_here.y, 10, 1);
+                let mut baseline = pos;
+                let ascender = max(line.metrics.ascender, self.gutter[i].metrics.ascender);
+                baseline.y += ascender;
                 let height = max(line.metrics.height, self.gutter[i].metrics.height) as i32;
-
-                for span in &line.spans {
-                    underline_y = pos_here.y - span.metrics.underline_pos;
-                    underline_thickness = span.metrics.underline_thickness;
-                    block_cursor_width = min(block_cursor_width, span.metrics.advance_width);
-
-                    let (_, face) = font_core.get(span.face, span.style).unwrap();
-                    for cluster in span.clusters() {
-                        let num_glyphs = cluster.glyph_infos.len();
-                        let glyphs_per_grapheme = num_glyphs / cluster.num_graphemes;
-
-                        for j in (0..num_glyphs).step_by(glyphs_per_grapheme) {
-                            let mut draw_cursor = false;
-                            if cursor.line_num() == linum && cursor.line_gidx() == grapheme {
-                                draw_cursor = true;
-                            }
-                            let mut width = 0;
-                            let cursor_x = pos_here.x;
-                            for gi in &cluster.glyph_infos[j..(j + glyphs_per_grapheme)] {
-                                ctx.glyph(
-                                    pos_here + gi.offset,
-                                    span.face,
-                                    gi.gid,
-                                    span.size,
-                                    span.color,
-                                    span.style,
-                                    &mut face.raster,
-                                );
-                                pos_here.x += gi.advance.width;
-                                width += gi.advance.width;
-                            }
-                            if draw_cursor {
-                                let (cursor_y, cursor_size) = match self.cursor_style {
-                                    TextCursorStyle::Beam => (pos.y, size2(2, height)),
-                                    TextCursorStyle::Block => (pos.y, size2(width, height)),
-                                    TextCursorStyle::Underline => {
-                                        (underline_y, size2(width, underline_thickness))
-                                    }
-                                };
-                                ctx.color_quad(
-                                    Rect::new(point2(cursor_x, cursor_y), cursor_size),
-                                    self.cursor_color,
-                                );
-                            }
-                            grapheme += 1;
-                        }
-                    }
-                }
-
-                let mut draw_cursor = false;
-                if cursor.line_num() == linum && cursor.line_gidx() == grapheme {
-                    draw_cursor = true;
-                }
-                if draw_cursor {
-                    let (cursor_y, cursor_size) = match self.cursor_style {
-                        TextCursorStyle::Beam => (pos.y, size2(2, height)),
-                        TextCursorStyle::Block => (pos.y, size2(block_cursor_width, height)),
-                        TextCursorStyle::Underline => {
-                            (underline_y, size2(block_cursor_width, underline_thickness))
-                        }
-                    };
-                    ctx.color_quad(
-                        Rect::new(point2(pos_here.x, cursor_y), cursor_size),
+                let cursor = if view.start_line + i == view.cursor.line_num() {
+                    Some((
+                        view.cursor.line_gidx(),
+                        self.cursor_style,
                         self.cursor_color,
-                    );
-                }
-
+                    ))
+                } else {
+                    None
+                };
+                line.draw(&mut ctx, ascender, height, baseline, font_core, cursor);
                 pos.y += height;
             }
         }
@@ -716,29 +567,13 @@ impl TextView {
 
             for i in 0..self.gutter.len() {
                 let gline = &self.gutter[i];
-                let mut pos_here = pos;
-                pos_here.y += max(self.lines[i].metrics.ascender, gline.metrics.ascender);
-                pos_here.x -= gline.metrics.width as i32;
-
-                for span in &gline.spans {
-                    let (_, face) = font_core.get(span.face, span.style).unwrap();
-                    for cluster in span.clusters() {
-                        for gi in cluster.glyph_infos {
-                            ctx.glyph(
-                                pos_here + gi.offset,
-                                span.face,
-                                gi.gid,
-                                span.size,
-                                span.color,
-                                span.style,
-                                &mut face.raster,
-                            );
-                            pos_here.x += gi.advance.width;
-                        }
-                    }
-                }
-
-                pos.y += max(self.lines[i].metrics.height, gline.metrics.height) as i32;
+                let mut baseline = pos;
+                let ascender = max(self.lines[i].metrics.ascender, gline.metrics.ascender);
+                baseline.y += ascender;
+                baseline.x -= gline.metrics.width as i32;
+                let height = max(self.lines[i].metrics.height, gline.metrics.height) as i32;
+                gline.draw(&mut ctx, ascender, height, baseline, font_core, None);
+                pos.y += height;
             }
         }
     }
@@ -755,7 +590,7 @@ impl TextView {
 
         // Max gutter width, to accomodate last line number of buffer
         let mut buf = format!("{}", buffer.len_lines());
-        let line = TextViewLine::from_textstr(
+        let line = ShapedTextLine::from_textstr(
             textstr(&buf, self.gutter_textsize, self.gutter_foreground_color),
             self.fixed_face,
             self.variable_face,
@@ -767,7 +602,7 @@ impl TextView {
         // Fill lines and gutter
         let mut iter = buffer.fmt_lines_from_pos(&pos);
         while let Some(line) = iter.next(&mut buf) {
-            let fmtline = TextViewLine::from_textline(
+            let fmtline = ShapedTextLine::from_textline(
                 line,
                 self.fixed_face,
                 self.variable_face,
@@ -776,7 +611,7 @@ impl TextView {
             );
             buf.clear();
             write!(&mut buf, "{}", linum).unwrap();
-            let gutterline = TextViewLine::from_textstr(
+            let gutterline = ShapedTextLine::from_textstr(
                 textstr(&buf, self.gutter_textsize, self.gutter_foreground_color),
                 self.fixed_face,
                 self.variable_face,
@@ -857,7 +692,7 @@ impl TextView {
 
         let mut iter = buffer.fmt_lines_from_pos(&pos);
         while let Some(line) = iter.next(&mut buf) {
-            let fmtline = TextViewLine::from_textline(
+            let fmtline = ShapedTextLine::from_textline(
                 line,
                 self.fixed_face,
                 self.variable_face,
@@ -867,7 +702,7 @@ impl TextView {
 
             buf.clear();
             write!(&mut buf, "{}", linum).unwrap();
-            let gutterline = TextViewLine::from_textstr(
+            let gutterline = ShapedTextLine::from_textstr(
                 textstr(&buf, self.gutter_textsize, self.gutter_foreground_color),
                 self.fixed_face,
                 self.variable_face,
@@ -909,7 +744,7 @@ impl TextView {
                 let mut linum = view.start_line;
                 let mut iter = buffer.fmt_lines_from_pos(&pos);
                 while let Some(line) = iter.prev(&mut buf) {
-                    let fmtline = TextViewLine::from_textline(
+                    let fmtline = ShapedTextLine::from_textline(
                         line,
                         self.fixed_face,
                         self.variable_face,
@@ -919,7 +754,7 @@ impl TextView {
 
                     buf.clear();
                     write!(&mut buf, "{}", linum).unwrap();
-                    let gutterline = TextViewLine::from_textstr(
+                    let gutterline = ShapedTextLine::from_textstr(
                         textstr(&buf, self.gutter_textsize, self.gutter_foreground_color),
                         self.fixed_face,
                         self.variable_face,
@@ -955,7 +790,7 @@ impl TextView {
                 let mut linum = view.start_line + num_lines + 1;
                 let mut iter = buffer.fmt_lines_from_pos(&pos);
                 while let Some(line) = iter.next(&mut buf) {
-                    let fmtline = TextViewLine::from_textline(
+                    let fmtline = ShapedTextLine::from_textline(
                         line,
                         self.fixed_face,
                         self.variable_face,
@@ -965,7 +800,7 @@ impl TextView {
 
                     buf.clear();
                     write!(&mut buf, "{}", linum).unwrap();
-                    let gutterline = TextViewLine::from_textstr(
+                    let gutterline = ShapedTextLine::from_textstr(
                         textstr(&buf, self.gutter_textsize, self.gutter_foreground_color),
                         self.fixed_face,
                         self.variable_face,

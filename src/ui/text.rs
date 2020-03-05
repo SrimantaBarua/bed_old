@@ -1,12 +1,14 @@
 // (C) 2020 Srimanta Barua <srimanta.barua1@gmail.com>
 
-use euclid::Size2D;
-use ropey::RopeSlice;
+use std::cmp::min;
+
+use euclid::{point2, size2, Point2D, Rect, Size2D};
 use unicode_segmentation::UnicodeSegmentation;
 
+use crate::types::{Color, PixelSize, TextPitch, TextSize, TextStyle, DPI};
+
+use super::context::WidgetRenderCtx;
 use super::font::{harfbuzz, FaceKey, FontCore, ScaledFaceMetrics};
-use crate::textbuffer::RopeGraphemes;
-use crate::types::{Color, TextPitch, TextSize, TextStyle, DPI};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum TextCursorStyle {
@@ -261,4 +263,227 @@ impl<'a> Iterator for ShapedClusterIter<'a> {
 pub(super) struct ShapedCluster<'a> {
     pub(super) num_graphemes: usize,
     pub(super) glyph_infos: &'a [harfbuzz::GlyphInfo],
+}
+
+#[derive(Debug, Default)]
+pub(super) struct ShapedTextLineMetrics {
+    pub(super) ascender: i32,
+    pub(super) descender: i32,
+    pub(super) height: u32,
+    pub(super) width: u32,
+}
+
+#[derive(Debug, Default)]
+pub(super) struct ShapedTextLine {
+    pub(super) metrics: ShapedTextLineMetrics,
+    pub(super) spans: Vec<ShapedTextSpan>,
+}
+
+impl ShapedTextLine {
+    pub(super) fn from_textline(
+        line: TextLine,
+        fixed_face: FaceKey,
+        variable_face: FaceKey,
+        font_core: &mut FontCore,
+        dpi: Size2D<u32, DPI>,
+    ) -> ShapedTextLine {
+        assert!(line.0.len() > 0);
+        let mut spans = Vec::new();
+        let (mut ascender, mut descender, mut width) = (0, 0, 0);
+        for span in line.0 {
+            for shaped_span in span.shaped_spans(fixed_face, variable_face, font_core, dpi) {
+                let span_metrics = &shaped_span.metrics;
+                if span_metrics.ascender > ascender {
+                    ascender = span_metrics.ascender;
+                }
+                if span_metrics.descender < descender {
+                    descender = span_metrics.descender;
+                }
+                for gi in shaped_span.glyph_infos.iter() {
+                    width += gi.advance.width;
+                }
+                spans.push(shaped_span);
+            }
+        }
+        assert!(ascender > descender);
+        let metrics = ShapedTextLineMetrics {
+            ascender: ascender,
+            descender: descender,
+            height: (ascender - descender) as u32,
+            width: if width < 0 { 0 } else { width as u32 },
+        };
+        ShapedTextLine {
+            spans: spans,
+            metrics: metrics,
+        }
+    }
+
+    pub(super) fn from_textstr(
+        span: TextSpan,
+        fixed_face: FaceKey,
+        variable_face: FaceKey,
+        font_core: &mut FontCore,
+        dpi: Size2D<u32, DPI>,
+    ) -> ShapedTextLine {
+        let mut spans = Vec::new();
+        let (mut ascender, mut descender, mut width) = (0, 0, 0);
+        for shaped_span in span.shaped_spans(fixed_face, variable_face, font_core, dpi) {
+            let span_metrics = &shaped_span.metrics;
+            if span_metrics.ascender > ascender {
+                ascender = span_metrics.ascender;
+            }
+            if span_metrics.descender < descender {
+                descender = span_metrics.descender;
+            }
+            for gi in shaped_span.glyph_infos.iter() {
+                width += gi.advance.width;
+            }
+            spans.push(shaped_span);
+        }
+        assert!(ascender > descender);
+        let metrics = ShapedTextLineMetrics {
+            ascender: ascender,
+            descender: descender,
+            height: (ascender - descender) as u32,
+            width: if width < 0 { 0 } else { width as u32 },
+        };
+        ShapedTextLine {
+            spans: spans,
+            metrics: metrics,
+        }
+    }
+
+    pub(super) fn draw(
+        &self,
+        ctx: &mut WidgetRenderCtx,
+        ascender: i32,
+        height: i32,
+        mut baseline: Point2D<i32, PixelSize>,
+        font_core: &mut FontCore,
+        cursor: Option<(usize, TextCursorStyle, Color)>,
+    ) -> Point2D<i32, PixelSize> {
+        let mut grapheme = 0;
+        let mut block_cursor_width = 10;
+        let mut underline_y = baseline.y;
+        let mut underline_thickness = 1;
+
+        for span in self.spans.iter() {
+            underline_y = baseline.y - span.metrics.underline_pos;
+            underline_thickness = span.metrics.underline_thickness;
+            block_cursor_width = min(block_cursor_width, span.metrics.advance_width);
+
+            let (_, face) = font_core.get(span.face, span.style).unwrap();
+            for cluster in span.clusters() {
+                if let Some((gidx, style, cursor_color)) = cursor {
+                    if gidx >= grapheme && gidx < grapheme + cluster.num_graphemes {
+                        let num_glyphs = cluster.glyph_infos.len();
+                        if num_glyphs % cluster.num_graphemes != 0 {
+                            let startx = baseline.x;
+                            for gi in cluster.glyph_infos {
+                                ctx.glyph(
+                                    baseline + gi.offset,
+                                    span.face,
+                                    gi.gid,
+                                    span.size,
+                                    span.color,
+                                    span.style,
+                                    &mut face.raster,
+                                );
+                                baseline.x += gi.advance.width;
+                            }
+                            let width = baseline.x - startx;
+                            let grapheme_width = width / cluster.num_graphemes as i32;
+                            let cursor_x = startx + ((gidx - grapheme) as i32) * grapheme_width;
+                            let (cursor_y, cursor_size) = match style {
+                                TextCursorStyle::Beam => (baseline.y - ascender, size2(2, height)),
+                                TextCursorStyle::Block => {
+                                    (baseline.y - ascender, size2(grapheme_width, height))
+                                }
+                                TextCursorStyle::Underline => {
+                                    (underline_y, size2(grapheme_width, underline_thickness))
+                                }
+                            };
+                            ctx.color_quad(
+                                Rect::new(point2(cursor_x, cursor_y), cursor_size),
+                                cursor_color,
+                            );
+                            grapheme += cluster.num_graphemes;
+                        } else {
+                            let glyphs_per_grapheme = num_glyphs / cluster.num_graphemes;
+                            for i in (0..num_glyphs).step_by(glyphs_per_grapheme) {
+                                let mut draw_cursor = false;
+                                if gidx == grapheme {
+                                    draw_cursor = true;
+                                }
+                                let cursor_x = baseline.x;
+                                for gi in &cluster.glyph_infos[i..(i + glyphs_per_grapheme)] {
+                                    ctx.glyph(
+                                        baseline + gi.offset,
+                                        span.face,
+                                        gi.gid,
+                                        span.size,
+                                        span.color,
+                                        span.style,
+                                        &mut face.raster,
+                                    );
+                                    baseline.x += gi.advance.width;
+                                }
+                                let width = baseline.x - cursor_x;
+                                if draw_cursor {
+                                    let (cursor_y, cursor_size) = match style {
+                                        TextCursorStyle::Beam => {
+                                            (baseline.y - ascender, size2(2, height))
+                                        }
+                                        TextCursorStyle::Block => {
+                                            (baseline.y - ascender, size2(width, height))
+                                        }
+                                        TextCursorStyle::Underline => {
+                                            (underline_y, size2(width, underline_thickness))
+                                        }
+                                    };
+                                    ctx.color_quad(
+                                        Rect::new(point2(cursor_x, cursor_y), cursor_size),
+                                        cursor_color,
+                                    );
+                                }
+                                grapheme += 1;
+                            }
+                        }
+                        continue;
+                    }
+                }
+                for gi in cluster.glyph_infos {
+                    ctx.glyph(
+                        baseline + gi.offset,
+                        span.face,
+                        gi.gid,
+                        span.size,
+                        span.color,
+                        span.style,
+                        &mut face.raster,
+                    );
+                    baseline.x += gi.advance.width;
+                }
+                grapheme += cluster.num_graphemes;
+            }
+        }
+        if let Some((gidx, style, cursor_color)) = cursor {
+            if gidx == grapheme {
+                let (cursor_y, cursor_size) = match style {
+                    TextCursorStyle::Beam => (baseline.y - ascender, size2(2, height)),
+                    TextCursorStyle::Block => {
+                        (baseline.y - ascender, size2(block_cursor_width, height))
+                    }
+                    TextCursorStyle::Underline => {
+                        (underline_y, size2(block_cursor_width, underline_thickness))
+                    }
+                };
+                ctx.color_quad(
+                    Rect::new(point2(baseline.x, cursor_y), cursor_size),
+                    cursor_color,
+                );
+            }
+        }
+        baseline
+    }
 }

@@ -22,7 +22,7 @@ pub(in crate::ui) fn shape<'a>(font: &HbFont, buf: &'a mut HbBuffer) -> GlyphInf
     buf.get_info_and_pos()
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub(in crate::ui) struct GlyphInfo {
     pub(in crate::ui) gid: u32,
     pub(in crate::ui) cluster: u32,
