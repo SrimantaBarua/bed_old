@@ -146,13 +146,12 @@ impl TextView {
         gutter_foreground_color: Color,
         gutter_background_color: Color,
         cursor_color: Color,
-        cursor_style: TextCursorStyle,
         view_id: usize,
     ) -> TextView {
         let cursor = {
             let borrow = &mut *buffer.borrow_mut();
             let pos = borrow.get_pos_at_line(0);
-            borrow.add_cursor_at_pos(view_id, &pos, cursor_style == TextCursorStyle::Beam)
+            borrow.add_cursor_at_pos(view_id, &pos, false)
         };
         let views = vec![View {
             start_line: 0,
@@ -179,10 +178,25 @@ impl TextView {
             gutter_foreground_color: gutter_foreground_color,
             gutter_background_color: gutter_background_color,
             cursor_color: cursor_color,
-            cursor_style: cursor_style,
+            cursor_style: TextCursorStyle::Block,
         };
         textview.refresh();
         textview
+    }
+
+    pub(super) fn add_buffer(&mut self, buffer: Rc<RefCell<Buffer>>, view_id: usize) {
+        let cursor = {
+            let borrow = &mut *buffer.borrow_mut();
+            let pos = borrow.get_pos_at_line(0);
+            borrow.add_cursor_at_pos(view_id, &pos, false)
+        };
+        self.views.push(View {
+            start_line: 0,
+            buffer: buffer,
+            cursor: cursor,
+        });
+        self.cur_view_idx += 1;
+        self.refresh();
     }
 
     pub(super) fn set_cursor_style(&mut self, style: TextCursorStyle) {

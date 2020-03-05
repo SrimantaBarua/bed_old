@@ -1,6 +1,7 @@
 // (C) 2020 Srimanta Barua <srimanta.barua1@gmail.com>
 
 use std::cell::RefCell;
+use std::cmp::{max, min};
 use std::rc::Rc;
 
 use euclid::{point2, size2, Rect, SideOffsets2D, Size2D};
@@ -10,7 +11,7 @@ use crate::types::{Color, PixelSize, TextPitch, TextSize, TextStyle, DPI};
 
 use super::context::ActiveRenderCtx;
 use super::font::{FaceKey, FontCore};
-use super::text::{ShapedTextSpan, TextCursorStyle, TextLine, TextSpan};
+use super::text::{ShapedTextSpan, TextSpan};
 
 #[derive(Default)]
 struct FuzzyPopupLineMetrics {
@@ -69,7 +70,6 @@ pub(super) struct FuzzyPopup {
     width_percentage: u32,
     height: u32,
     edge_padding: u32,
-    text_padding: u32,
     bottom_off: u32,
     background_color: Color,
     foreground_color: Color,
@@ -78,13 +78,16 @@ pub(super) struct FuzzyPopup {
     text_size: TextSize,
     face: FaceKey,
     input_line: FuzzyPopupLine,
+    input_label: FuzzyPopupLine,
     lines: Vec<FuzzyPopupLine>,
     dpi: Size2D<u32, DPI>,
     font_core: Rc<RefCell<FontCore>>,
+    input_label_str: String,
     user_input: String,
     choices: Vec<String>,
     filtered: Vec<(usize, String)>,
     is_active: bool,
+    default_on_empty: bool,
     cursor_bidx: usize,
     cursor_gidx: usize,
 }
@@ -95,7 +98,6 @@ impl FuzzyPopup {
         max_height_percentage: u32,
         width_percentage: u32,
         edge_padding: u32,
-        text_padding: u32,
         bottom_off: u32,
         background_color: Color,
         foreground_color: Color,
@@ -111,7 +113,6 @@ impl FuzzyPopup {
             max_height_percentage: max_height_percentage,
             width_percentage: width_percentage,
             edge_padding: edge_padding,
-            text_padding: text_padding,
             bottom_off: bottom_off,
             height: 0,
             background_color: background_color,
@@ -121,13 +122,16 @@ impl FuzzyPopup {
             text_size: text_size,
             face: face,
             input_line: FuzzyPopupLine::default(),
+            input_label: FuzzyPopupLine::default(),
             lines: Vec::new(),
             dpi: dpi,
             font_core: font_core,
+            input_label_str: String::new(),
             user_input: String::new(),
             choices: Vec::new(),
             filtered: Vec::new(),
             is_active: false,
+            default_on_empty: false,
             cursor_bidx: 0,
             cursor_gidx: 0,
         };
@@ -162,22 +166,48 @@ impl FuzzyPopup {
         {
             let mut ctx = actx.get_widget_context(inner_rect.cast(), self.background_color);
             let mut pos = point2(0, inner_rect.size.height as i32);
-            pos.y -= self.input_line.metrics.height as i32;
+            pos.y += min(
+                self.input_line.metrics.descender,
+                self.input_label.metrics.descender,
+            ) as i32;
+
+            // Draw input label
+            let mut pos_here = pos;
+            for span in &self.input_label.spans {
+                let (_, face) = font_core.get(span.face, span.style).unwrap();
+                for cluster in span.clusters() {
+                    for gi in cluster.glyph_infos {
+                        ctx.glyph(
+                            pos_here + gi.offset,
+                            span.face,
+                            gi.gid,
+                            span.size,
+                            span.color,
+                            span.style,
+                            &mut face.raster,
+                        );
+                        pos_here.x += gi.advance.width;
+                    }
+                }
+            }
+            pos_here.x += 2;
+            let text_padding = pos_here.x;
 
             // Draw input line
-            let mut pos_here = pos;
-            pos_here.y += self.input_line.metrics.ascender;
             let mut grapheme = 0;
             for span in &self.input_line.spans {
                 let (_, face) = font_core.get(span.face, span.style).unwrap();
                 for cluster in span.clusters() {
                     let num_glyphs = cluster.glyph_infos.len();
-                    let glyphs_per_grapheme = num_glyphs / cluster.num_graphemes;
+                    let mut glyphs_per_grapheme = num_glyphs / cluster.num_graphemes;
+                    if glyphs_per_grapheme == 0 {
+                        glyphs_per_grapheme = 1;
+                    }
                     for j in (0..num_glyphs).step_by(glyphs_per_grapheme) {
                         if grapheme == self.cursor_gidx {
                             ctx.color_quad(
                                 Rect::new(
-                                    point2(pos_here.x, pos.y),
+                                    point2(pos_here.x, pos.y - self.input_line.metrics.ascender),
                                     size2(2, self.input_line.metrics.height).cast(),
                                 ),
                                 self.cursor_color,
@@ -202,12 +232,16 @@ impl FuzzyPopup {
             if grapheme == self.cursor_gidx {
                 ctx.color_quad(
                     Rect::new(
-                        point2(pos_here.x, pos.y),
+                        point2(pos_here.x, pos.y - self.input_line.metrics.ascender),
                         size2(2, self.input_line.metrics.height).cast(),
                     ),
                     self.cursor_color,
                 );
             }
+            pos.y -= max(
+                self.input_line.metrics.ascender,
+                self.input_label.metrics.ascender,
+            ) as i32;
 
             // Draw selection lines
             if self.lines.len() > 0 {
@@ -221,7 +255,7 @@ impl FuzzyPopup {
                         pos.y -= line.metrics.height as i32;
                     }
                     let mut pos_here = pos;
-                    pos_here.x += self.text_padding as i32;
+                    pos_here.x += text_padding;
                     pos_here.y += line.metrics.ascender;
                     for span in &line.spans {
                         let (_, face) = font_core.get(span.face, span.style).unwrap();
@@ -245,12 +279,16 @@ impl FuzzyPopup {
         }
     }
 
-    pub(super) fn fill_with<F>(&mut self, f: F)
-    where
-        F: Fn(&mut Vec<String>),
-    {
-        self.choices.clear();
-        f(&mut self.choices);
+    pub(super) fn push_string_choices(&mut self, choices: &[String]) {
+        self.choices.extend_from_slice(choices);
+        self.filter();
+        self.refresh();
+    }
+
+    pub(super) fn push_str_choices(&mut self, choices: &[&str]) {
+        for s in choices {
+            self.choices.push(s.to_string());
+        }
         self.filter();
         self.refresh();
     }
@@ -259,16 +297,27 @@ impl FuzzyPopup {
         self.is_active
     }
 
+    pub(super) fn set_input_label(&mut self, label: &str) {
+        self.input_label_str = label.to_owned();
+        self.refresh();
+    }
+
+    pub(super) fn set_default_on_empty(&mut self, val: bool) {
+        self.default_on_empty = val;
+    }
+
     pub(super) fn set_active(&mut self, val: bool) {
         self.is_active = val;
+        self.choices.clear();
         self.user_input.clear();
+        self.filtered.clear();
         self.cursor_bidx = 0;
         self.cursor_gidx = 0;
     }
 
-    pub(super) fn get_selection(&self, get_default_on_empty: bool) -> Option<String> {
+    pub(super) fn get_selection(&self) -> Option<String> {
         if self.filtered.len() > 0 {
-            if get_default_on_empty || self.user_input.len() > 0 {
+            if self.default_on_empty || self.user_input.len() > 0 {
                 Some(self.filtered[0].1.to_owned())
             } else {
                 None
@@ -321,7 +370,8 @@ impl FuzzyPopup {
         }
         self.filtered.sort_by(|a, b| {
             if a.0 == b.0 {
-                a.1.len().cmp(&b.1.len())
+                //a.1.len().cmp(&b.1.len())
+                a.1.cmp(&b.1)
             } else {
                 a.0.cmp(&b.0)
             }
@@ -330,7 +380,6 @@ impl FuzzyPopup {
 
     fn refresh(&mut self) {
         let max_height = (self.max_height_percentage * self.window_size.height) / 100;
-        self.height = self.input_line.metrics.height + self.edge_padding * 2;
         self.lines.clear();
         let font_core = &mut *self.font_core.borrow_mut();
 
@@ -365,6 +414,44 @@ impl FuzzyPopup {
                 self.dpi,
             )
         };
+
+        self.input_label = if self.input_label_str.len() == 0 {
+            FuzzyPopupLine::from_textstr(
+                TextSpan::new(
+                    " ",
+                    self.text_size,
+                    TextStyle::default(),
+                    self.foreground_color,
+                    TextPitch::Variable,
+                    None,
+                ),
+                self.face,
+                self.face,
+                font_core,
+                self.dpi,
+            )
+        } else {
+            FuzzyPopupLine::from_textstr(
+                TextSpan::new(
+                    &self.input_label_str,
+                    self.text_size,
+                    TextStyle::default(),
+                    self.foreground_color,
+                    TextPitch::Variable,
+                    None,
+                ),
+                self.face,
+                self.face,
+                font_core,
+                self.dpi,
+            )
+        };
+
+        self.height = max(
+            self.input_line.metrics.height,
+            self.input_label.metrics.height,
+        ) + self.edge_padding * 2;
+
         for (_, line) in &self.filtered {
             let fmtline = FuzzyPopupLine::from_textstr(
                 TextSpan::new(

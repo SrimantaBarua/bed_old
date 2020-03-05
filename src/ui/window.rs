@@ -1,6 +1,7 @@
 // (C) 2020 Srimanta Barua <srimanta.barua1@gmail.com>
 
 use std::cell::RefCell;
+use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::mpsc::Receiver;
 use std::time;
@@ -9,6 +10,7 @@ use std::time;
 use euclid::SideOffsets2D;
 use euclid::{point2, size2, Rect, Size2D};
 use glfw::{Action, Context, Glfw, Key, Modifiers, WindowEvent, WindowMode};
+use walkdir::WalkDir;
 
 use crate::core::Core;
 use crate::textbuffer::Buffer;
@@ -72,6 +74,8 @@ pub(crate) struct Window {
     textview_scroll_v: (f64, f64),
     input_state: InputState,
     font_core: Rc<RefCell<FontCore>>,
+    handling_command: Option<String>,
+    working_directory: PathBuf,
 }
 
 impl Window {
@@ -142,7 +146,6 @@ impl Window {
             GUTTER_FG_COLOR,
             GUTTER_BG_COLOR,
             CURSOR_COLOR,
-            TextCursorStyle::Block,
             view_id,
         );
         // Initialize fuzzy search popup
@@ -151,7 +154,6 @@ impl Window {
             40,
             80,
             10,
-            5,
             10,
             FUZZY_BG_COLOR,
             FUZZY_FG_COLOR,
@@ -176,6 +178,9 @@ impl Window {
                 textview_scroll_v: (0.0, 0.0),
                 input_state: InputState::default(),
                 font_core: font_core,
+                handling_command: None,
+                working_directory: std::env::current_dir()
+                    .expect("failed to get current directory"),
             },
             events,
         )
@@ -276,12 +281,78 @@ impl Window {
         self.window.set_should_close(val);
     }
 
-    fn handle_command(&mut self, command: String) {
-        match &command[..] {
-            "quit" => self.set_should_close(true),
-            "edit" => {}
-            "write" => {}
-            _ => {}
+    fn handle_command(&mut self, selection: Option<String>) {
+        if let Some(command) = &self.handling_command {
+            match &command[..] {
+                "edit" => {
+                    if let Some(selection) = selection {
+                        let core = &mut *self.core.borrow_mut();
+                        let mut path = self.working_directory.clone();
+                        path.push(&selection);
+                        match core.new_buffer_from_file(path.to_str().unwrap()) {
+                            Ok(buffer) => {
+                                let view_id = core.next_view_id();
+                                self.textview.add_buffer(buffer, view_id);
+                            }
+                            Err(e) => {
+                                println!("failed to open file: {:?}: {}", path, e);
+                            }
+                        }
+                    }
+                    self.handling_command = None;
+                    self.input_state.mode = InputMode::Normal;
+                    self.fuzzy_popup.set_active(false);
+                }
+                _ => unreachable!(),
+            }
+        } else {
+            if let Some(selection) = selection {
+                match &selection[..] {
+                    "quit" => {
+                        self.input_state.mode = InputMode::Normal;
+                        self.fuzzy_popup.set_active(false);
+                        self.set_should_close(true)
+                    }
+                    "edit" => {
+                        self.handling_command = Some("edit".to_owned());
+                        self.fuzzy_popup.set_active(true);
+                        self.fuzzy_popup.set_default_on_empty(true);
+                        let basename = self
+                            .working_directory
+                            .file_name()
+                            .unwrap()
+                            .to_str()
+                            .unwrap();
+                        self.fuzzy_popup.set_input_label(basename);
+                        let paths = WalkDir::new(&self.working_directory)
+                            .into_iter()
+                            .filter_map(|e| {
+                                e.ok().and_then(|e| {
+                                    let mut path = e.path();
+                                    if path.is_file() {
+                                        path = path.strip_prefix(&self.working_directory).unwrap();
+                                        path.to_str().map(|s| s.to_string())
+                                    } else {
+                                        None
+                                    }
+                                })
+                            })
+                            .collect::<Vec<_>>();
+                        self.fuzzy_popup.push_string_choices(&paths);
+                    }
+                    "write" => {
+                        self.input_state.mode = InputMode::Normal;
+                        self.fuzzy_popup.set_active(false);
+                    }
+                    _ => {
+                        self.input_state.mode = InputMode::Normal;
+                        self.fuzzy_popup.set_active(false);
+                    }
+                }
+            } else {
+                self.input_state.mode = InputMode::Normal;
+                self.fuzzy_popup.set_active(false);
+            }
         }
     }
 
@@ -431,12 +502,10 @@ impl Window {
                     state.action_multiplier.clear();
                     state.movement_multiplier.clear();
                     state.mode = InputMode::Command;
-                    self.fuzzy_popup.fill_with(|v| {
-                        for command in COMMANDS.iter() {
-                            v.push(command.to_string());
-                        }
-                    });
                     self.fuzzy_popup.set_active(true);
+                    self.fuzzy_popup.set_default_on_empty(false);
+                    self.fuzzy_popup.set_input_label(":");
+                    self.fuzzy_popup.push_str_choices(&COMMANDS);
                 }
                 WindowEvent::Key(Key::Down, _, Action::Press, _)
                 | WindowEvent::Key(Key::Down, _, Action::Repeat, _) => {
@@ -650,6 +719,7 @@ impl Window {
             InputMode::Command => match event {
                 WindowEvent::Key(Key::Escape, _, Action::Press, _) => {
                     state.mode = InputMode::Normal;
+                    self.handling_command = None;
                     self.fuzzy_popup.set_active(false);
                 }
                 WindowEvent::Char(c) => {
@@ -660,12 +730,7 @@ impl Window {
                     self.fuzzy_popup.delete_left();
                 }
                 WindowEvent::Key(Key::Enter, _, Action::Press, _) => {
-                    if let Some(selection) = self.fuzzy_popup.get_selection(false) {
-                        self.handle_command(selection);
-                        state = &mut self.input_state;
-                    }
-                    state.mode = InputMode::Normal;
-                    self.fuzzy_popup.set_active(false);
+                    self.handle_command(self.fuzzy_popup.get_selection());
                 }
                 _ => {}
             },
