@@ -137,6 +137,9 @@ impl<'a> ActiveRenderCtx<'a> {
         {
             let active_shader = self.clr_quad_shader.use_program(&mut self.active_gl);
             self.clr_quad_arr
+                .push(ColorQuad::new(self.rect.cast(), Color::new(0, 0, 0, 255)));
+            //self.clr_quad_arr.flush(&active_shader);
+            self.clr_quad_arr
                 .push(ColorQuad::new(rect.cast(), Color::new(255, 0, 0, 255)));
             self.clr_quad_arr.flush(&active_shader);
         }

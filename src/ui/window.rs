@@ -5,7 +5,9 @@ use std::rc::Rc;
 use std::sync::mpsc::Receiver;
 use std::time;
 
-use euclid::{point2, size2, Rect, SideOffsets2D, Size2D};
+#[cfg(target_os = "windows")]
+use euclid::SideOffsets2D;
+use euclid::{point2, size2, Rect, Size2D};
 use glfw::{Action, Context, Glfw, Key, Modifiers, WindowEvent, WindowMode};
 
 use crate::core::Core;
@@ -14,6 +16,7 @@ use crate::types::{Color, PixelSize, TextSize};
 
 use super::context::RenderCtx;
 use super::font::{FaceKey, FontCore};
+use super::fuzzy_popup::FuzzyPopup;
 use super::text::TextCursorStyle;
 use super::textview::TextView;
 
@@ -24,6 +27,12 @@ static GUTTER_BG_COLOR: Color = Color::new(255, 255, 255, 255);
 static TEXTVIEW_BG_COLOR: Color = Color::new(255, 255, 255, 255);
 static CLEAR_COLOR: Color = Color::new(255, 255, 255, 255);
 static CURSOR_COLOR: Color = Color::new(255, 128, 0, 196);
+static FUZZY_BG_COLOR: Color = Color::new(255, 255, 255, 255);
+static FUZZY_FG_COLOR: Color = Color::new(128, 128, 128, 255);
+static FUZZY_SELECT_COLOR: Color = Color::new(255, 100, 0, 255);
+static FUZZY_TEXT_SIZE: f32 = 9.0;
+
+static COMMANDS: [&'static str; 4] = ["quit", "write", "edit", "cd"];
 
 #[cfg(target_os = "linux")]
 const FIXED_FONT: &'static str = "monospace";
@@ -59,6 +68,7 @@ pub(crate) struct Window {
     fixed_face: FaceKey,
     variable_face: FaceKey,
     textview: TextView,
+    fuzzy_popup: FuzzyPopup,
     textview_scroll_v: (f64, f64),
     input_state: InputState,
     font_core: Rc<RefCell<FontCore>>,
@@ -135,6 +145,23 @@ impl Window {
             TextCursorStyle::Block,
             view_id,
         );
+        // Initialize fuzzy search popup
+        let fuzzy_popup = FuzzyPopup::new(
+            framebuffer_rect.size,
+            40,
+            80,
+            10,
+            5,
+            10,
+            FUZZY_BG_COLOR,
+            FUZZY_FG_COLOR,
+            FUZZY_SELECT_COLOR,
+            CURSOR_COLOR,
+            TextSize::from_f32(FUZZY_TEXT_SIZE),
+            variable_face,
+            font_core.clone(),
+            dpi,
+        );
         // Return window wrapper
         (
             Window {
@@ -145,6 +172,7 @@ impl Window {
                 fixed_face: fixed_face,
                 variable_face: variable_face,
                 textview: textview,
+                fuzzy_popup: fuzzy_popup,
                 textview_scroll_v: (0.0, 0.0),
                 input_state: InputState::default(),
                 font_core: font_core,
@@ -159,11 +187,39 @@ impl Window {
         duration: time::Duration,
     ) -> bool {
         let mut to_refresh = false;
-        let mut textview_scroll_a = (0.0, 0.0);
+
+        let (m, g, coeff, mut a) = (0.5, 9.8, 0.3, (0.0, 0.0));
+        let time = (duration.subsec_millis() as f64) / 10.0;
 
         // Apply friction
-        self.textview_scroll_v.0 = (self.textview_scroll_v.0 * (3.0 / 8.0)).round();
-        self.textview_scroll_v.1 = (self.textview_scroll_v.1 * (3.0 / 8.0)).round();
+        let friction_a = g * coeff;
+        let friction_v = friction_a * time;
+        if self.textview_scroll_v.0 < 0.0 {
+            if self.textview_scroll_v.0 >= -friction_v {
+                self.textview_scroll_v.0 = 0.0;
+            } else {
+                self.textview_scroll_v.0 += friction_v;
+            }
+        } else if self.textview_scroll_v.0 > 0.0 {
+            if self.textview_scroll_v.0 <= friction_v {
+                self.textview_scroll_v.0 = 0.0;
+            } else {
+                self.textview_scroll_v.0 -= friction_v;
+            }
+        }
+        if self.textview_scroll_v.1 < 0.0 {
+            if self.textview_scroll_v.1 >= -friction_v {
+                self.textview_scroll_v.1 = 0.0;
+            } else {
+                self.textview_scroll_v.1 += friction_v;
+            }
+        } else if self.textview_scroll_v.1 > 0.0 {
+            if self.textview_scroll_v.1 <= friction_v {
+                self.textview_scroll_v.1 = 0.0;
+            } else {
+                self.textview_scroll_v.1 -= friction_v;
+            }
+        }
 
         for (_, event) in glfw::flush_messages(events) {
             to_refresh = true;
@@ -171,21 +227,20 @@ impl Window {
                 WindowEvent::FramebufferSize(w, h) => self.resize(size2(w as u32, h as u32)),
                 WindowEvent::Scroll(x, y) => {
                     // Scroll acceleration accumulation
-                    textview_scroll_a.0 -= x;
-                    textview_scroll_a.1 -= y;
+                    a.0 -= x / m;
+                    a.1 -= y / m;
                 }
                 e => self.handle_event(e),
             }
         }
 
         // Apply accelation
-        let millis = duration.subsec_millis() as f64;
-        self.textview_scroll_v.0 += (millis * textview_scroll_a.0) / 12.0;
-        self.textview_scroll_v.1 += (millis * textview_scroll_a.1) / 12.0;
+        self.textview_scroll_v.0 += time * a.0;
+        self.textview_scroll_v.1 += time * a.1;
 
         // Calculate delta
-        let textview_scroll_sx = (millis * self.textview_scroll_v.0) / 4.0;
-        let textview_scroll_sy = (millis * self.textview_scroll_v.1) / 4.0;
+        let textview_scroll_sx = time * self.textview_scroll_v.0;
+        let textview_scroll_sy = time * self.textview_scroll_v.1;
         let textview_scroll_s = (textview_scroll_sx, textview_scroll_sy);
 
         // If there is any velocity, we need to refresh
@@ -205,6 +260,11 @@ impl Window {
         let mut active_ctx = self.render_ctx.activate(&mut self.window);
         active_ctx.clear();
         self.textview.draw(&mut active_ctx);
+
+        if self.fuzzy_popup.is_active() {
+            self.fuzzy_popup.draw(&mut active_ctx);
+        }
+
         self.window.swap_buffers();
     }
 
@@ -216,14 +276,25 @@ impl Window {
         self.window.set_should_close(val);
     }
 
-    fn resize(&mut self, size: Size2D<u32, PixelSize>) {
-        self.render_ctx.set_rect(get_framebuffer_rect(&self.window));
+    fn handle_command(&mut self, command: String) {
+        match &command[..] {
+            "quit" => self.set_should_close(true),
+            "edit" => {}
+            "write" => {}
+            _ => {}
+        }
+    }
+
+    fn resize(&mut self, _size: Size2D<u32, PixelSize>) {
+        let fb_rect = get_framebuffer_rect(&self.window);
+        self.render_ctx.set_rect(fb_rect);
         self.textview
-            .set_rect(Rect::new(point2(0, 0), size2(size.width, size.height)));
+            .set_rect(Rect::new(point2(0, 0), fb_rect.size));
+        self.fuzzy_popup.resize(fb_rect.size);
     }
 
     fn handle_event(&mut self, event: WindowEvent) {
-        let state = &mut self.input_state;
+        let mut state = &mut self.input_state;
         let textview = &mut self.textview;
         match state.mode {
             InputMode::Insert => match event {
@@ -356,10 +427,16 @@ impl Window {
                 _ => {}
             },
             InputMode::Normal => match event {
-                WindowEvent::Key(Key::Escape, _, Action::Press, _) => {
+                WindowEvent::Char(':') => {
                     state.action_multiplier.clear();
                     state.movement_multiplier.clear();
-                    self.set_should_close(true);
+                    state.mode = InputMode::Command;
+                    self.fuzzy_popup.fill_with(|v| {
+                        for command in COMMANDS.iter() {
+                            v.push(command.to_string());
+                        }
+                    });
+                    self.fuzzy_popup.set_active(true);
                 }
                 WindowEvent::Key(Key::Down, _, Action::Press, _)
                 | WindowEvent::Key(Key::Down, _, Action::Repeat, _) => {
@@ -570,6 +647,28 @@ impl Window {
                 }
                 _ => {}
             },
+            InputMode::Command => match event {
+                WindowEvent::Key(Key::Escape, _, Action::Press, _) => {
+                    state.mode = InputMode::Normal;
+                    self.fuzzy_popup.set_active(false);
+                }
+                WindowEvent::Char(c) => {
+                    self.fuzzy_popup.insert(c);
+                }
+                WindowEvent::Key(Key::Backspace, _, Action::Press, _)
+                | WindowEvent::Key(Key::Backspace, _, Action::Repeat, _) => {
+                    self.fuzzy_popup.delete_left();
+                }
+                WindowEvent::Key(Key::Enter, _, Action::Press, _) => {
+                    if let Some(selection) = self.fuzzy_popup.get_selection(false) {
+                        self.handle_command(selection);
+                        state = &mut self.input_state;
+                    }
+                    state.mode = InputMode::Normal;
+                    self.fuzzy_popup.set_active(false);
+                }
+                _ => {}
+            },
             InputMode::DeleteMotion => match event {
                 WindowEvent::Key(Key::Escape, _, Action::Press, _) => {
                     state.action_multiplier.clear();
@@ -669,6 +768,7 @@ impl Window {
 enum InputMode {
     Insert,
     Normal,
+    Command,
     DeleteMotion,
 }
 

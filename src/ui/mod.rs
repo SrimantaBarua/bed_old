@@ -11,6 +11,7 @@ use crate::textbuffer::Buffer;
 
 mod context;
 mod font;
+mod fuzzy_popup;
 mod glyphrender;
 mod opengl;
 mod quad;
