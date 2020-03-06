@@ -38,7 +38,10 @@ pub(super) struct FuzzyPopup {
     user_input: String,
     choices: Vec<String>,
     filtered: Vec<(usize, String)>,
+    select_idx: usize,
     is_active: bool,
+    interacted: bool,
+    pub(super) to_refresh: bool,
     default_on_empty: bool,
     cursor_bidx: usize,
     cursor_gidx: usize,
@@ -87,7 +90,10 @@ impl FuzzyPopup {
             user_input: String::new(),
             choices: Vec::new(),
             filtered: Vec::new(),
+            select_idx: 0,
             is_active: false,
+            interacted: false,
+            to_refresh: false,
             default_on_empty: false,
             cursor_bidx: 0,
             cursor_gidx: 0,
@@ -98,6 +104,8 @@ impl FuzzyPopup {
     }
 
     pub(super) fn draw(&mut self, actx: &mut ActiveRenderCtx) {
+        self.to_refresh = false;
+
         let width = (self.window_size.width * self.width_percentage) / 100;
         let lpad = (self.window_size.width - width) / 2;
         let origin = point2(
@@ -157,15 +165,15 @@ impl FuzzyPopup {
 
         // Draw selection lines
         if self.lines.len() > 0 {
-            pos.y -= (self.lines[0].metrics.height + 2 * self.line_spacing) as i32;
-            let rect = Rect::new(pos, size2(width, self.lines[0].metrics.height).cast());
-            ctx.color_quad(rect, Color::new(0, 0, 0, 8));
-
             for i in 0..self.lines.len() {
                 let line = &self.lines[i];
-                if i > 0 {
-                    pos.y -= (line.metrics.height + 2 * self.line_spacing) as i32;
+                pos.y -= (line.metrics.height + 2 * self.line_spacing) as i32;
+
+                if i == self.select_idx {
+                    let rect = Rect::new(pos, size2(width, self.lines[i].metrics.height).cast());
+                    ctx.color_quad(rect, Color::new(0, 0, 0, 8));
                 }
+
                 let mut pos_here = pos;
                 pos_here.x += text_padding;
                 pos_here.y += line.metrics.ascender;
@@ -185,7 +193,7 @@ impl FuzzyPopup {
         self.async_source = Some(source);
     }
 
-    pub(super) fn update_from_async(&mut self) -> bool {
+    pub(super) fn update_from_async(&mut self) {
         let mut found = false;
         if let Some(source) = &self.async_source {
             loop {
@@ -204,23 +212,26 @@ impl FuzzyPopup {
         }
         if found {
             self.re_filter();
+            self.to_refresh = true;
         }
-        found
     }
 
     pub(super) fn re_filter(&mut self) {
         self.filter();
         self.refresh();
+        self.to_refresh = true;
     }
 
     pub(super) fn push_string_choices(&mut self, choices: &[String]) {
         self.choices.extend_from_slice(choices);
+        self.to_refresh = true;
     }
 
     pub(super) fn push_str_choices(&mut self, choices: &[&str]) {
         for s in choices {
             self.choices.push(s.to_string());
         }
+        self.to_refresh = true;
     }
 
     pub(super) fn is_active(&self) -> bool {
@@ -230,6 +241,7 @@ impl FuzzyPopup {
     pub(super) fn set_input_label(&mut self, label: &str) {
         self.input_label_str = label.to_owned();
         self.refresh();
+        self.to_refresh = true;
     }
 
     pub(super) fn set_default_on_empty(&mut self, val: bool) {
@@ -239,17 +251,20 @@ impl FuzzyPopup {
     pub(super) fn set_active(&mut self, val: bool) {
         self.async_source = None;
         self.is_active = val;
+        self.interacted = false;
         self.choices.clear();
         self.user_input.clear();
         self.filtered.clear();
+        self.select_idx = 0;
         self.cursor_bidx = 0;
         self.cursor_gidx = 0;
+        self.to_refresh = true;
     }
 
     pub(super) fn get_selection(&self) -> Option<String> {
         if self.filtered.len() > 0 {
-            if self.default_on_empty || self.user_input.len() > 0 {
-                Some(self.filtered[0].1.to_owned())
+            if self.default_on_empty || self.interacted {
+                Some(self.filtered[self.select_idx].1.to_owned())
             } else {
                 None
             }
@@ -259,12 +274,15 @@ impl FuzzyPopup {
     }
 
     pub(super) fn insert(&mut self, c: char) {
+        self.interacted = true;
         self.user_input.push(c);
         self.cursor_bidx = next_grapheme_boundary(&self.user_input, self.cursor_bidx);
         self.cursor_gidx = bidx_to_gidx(&self.user_input, self.cursor_bidx);
+        self.to_refresh = true;
     }
 
     pub(super) fn delete_left(&mut self) {
+        self.interacted = true;
         if self.cursor_bidx == 0 {
             return;
         }
@@ -281,15 +299,35 @@ impl FuzzyPopup {
             self.cursor_bidx = next_grapheme_boundary(&self.user_input, self.cursor_bidx);
         }
         self.cursor_gidx = bidx_to_gidx(&self.user_input, self.cursor_bidx);
+        self.to_refresh = true;
+    }
+
+    pub(super) fn up_key(&mut self) {
+        self.interacted = true;
+        self.select_idx += 1;
+        if self.select_idx >= self.filtered.len() {
+            self.select_idx = self.filtered.len() - 1;
+        }
+        self.to_refresh = true;
+    }
+
+    pub(super) fn down_key(&mut self) {
+        self.interacted = true;
+        if self.select_idx > 0 {
+            self.select_idx -= 1;
+        }
+        self.to_refresh = true;
     }
 
     pub(super) fn resize(&mut self, window_size: Size2D<u32, PixelSize>) {
         self.window_size = window_size;
         self.refresh();
+        self.to_refresh = true;
     }
 
     fn filter(&mut self) {
         self.filtered.clear();
+        self.select_idx = 0;
         for choice in &self.choices {
             if let Some(score) = fuzzy_search(choice, &self.user_input) {
                 self.filtered.push((score, choice.to_owned()));

@@ -278,7 +278,8 @@ impl Window {
 
         // Update fuzzy finder async if required
         if self.fuzzy_popup.is_active() {
-            to_refresh |= self.fuzzy_popup.update_from_async();
+            self.fuzzy_popup.update_from_async();
+            to_refresh |= self.fuzzy_popup.to_refresh;
         }
 
         to_refresh
@@ -763,6 +764,14 @@ impl Window {
                 WindowEvent::Char(c) => {
                     self.fuzzy_popup.insert(c);
                     self.fuzzy_popup.re_filter();
+                }
+                WindowEvent::Key(Key::Up, _, Action::Press, _)
+                | WindowEvent::Key(Key::Up, _, Action::Repeat, _) => {
+                    self.fuzzy_popup.up_key();
+                }
+                WindowEvent::Key(Key::Down, _, Action::Press, _)
+                | WindowEvent::Key(Key::Down, _, Action::Repeat, _) => {
+                    self.fuzzy_popup.down_key();
                 }
                 WindowEvent::Key(Key::Backspace, _, Action::Press, _)
                 | WindowEvent::Key(Key::Backspace, _, Action::Repeat, _) => {
