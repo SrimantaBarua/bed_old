@@ -4,7 +4,7 @@ use std::marker::PhantomData;
 use std::ops::Drop;
 use std::ptr;
 
-use euclid::{Rect, Size2D};
+use euclid::{point2, size2, Rect, Size2D};
 use gl::types::{GLenum, GLuint};
 
 use crate::types::{PixelSize, TextureSize};
@@ -130,11 +130,25 @@ where
 
     pub(in crate::ui) fn get_tex_dimensions(
         &self,
-        rect: Rect<u32, PixelSize>,
+        rect: Rect<i32, PixelSize>,
     ) -> Rect<f32, TextureSize> {
-        let max = rect.max();
-        assert!(max.x <= self.size.width, "texture coords out of bounds");
-        assert!(max.y <= self.size.height, "texture coords out of bounds");
+        let qbox = rect.to_box2d();
+        Rect::new(
+            point2(
+                qbox.min.x as f32 / self.size.width as f32,
+                1.0 - (qbox.min.y as f32 / self.size.height as f32),
+            ),
+            size2(
+                rect.size.width as f32 / self.size.width as f32,
+                -(rect.size.height as f32) / self.size.height as f32,
+            ),
+        )
+    }
+
+    pub(in crate::ui) fn get_inverted_tex_dimension(
+        &self,
+        rect: Rect<i32, PixelSize>,
+    ) -> Rect<f32, TextureSize> {
         rect.cast()
             .cast_unit()
             .scale(1.0 / self.size.width as f32, 1.0 / self.size.height as f32)

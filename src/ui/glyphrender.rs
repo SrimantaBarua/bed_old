@@ -69,7 +69,7 @@ impl RenderedGlyph {
             ),
             self.rect.size.cast(),
         );
-        let tex_rect = atlas.get_tex_dimensions(self.rect);
+        let tex_rect = atlas.get_inverted_tex_dimension(self.rect.cast());
         TexColorQuad::new(quad_rect, tex_rect, color)
     }
 }

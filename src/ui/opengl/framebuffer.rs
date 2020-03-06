@@ -91,6 +91,10 @@ impl Framebuffer {
         self.tex.activate();
     }
 
+    pub(in crate::ui) fn get_texture(&self) -> &GlTexture<TexRGB> {
+        &self.tex
+    }
+
     pub(in crate::ui) fn unbind(&mut self) {
         unsafe {
             gl::BindFramebuffer(gl::FRAMEBUFFER, 0);

@@ -68,6 +68,7 @@ impl RenderCtx {
     pub(super) fn activate(&mut self, window: &mut glfw::Window) -> ActiveRenderCtx {
         let mut active_gl = self.gl.activate(window);
         active_gl.viewport(self.rect.cast());
+        self.framebuffers[0].bind_texture();
         let mut ret = ActiveRenderCtx {
             active_gl: active_gl,
             rect: self.rect,
@@ -115,6 +116,11 @@ impl<'a> ActiveRenderCtx<'a> {
     pub(super) fn clear(&mut self) {
         self.active_gl.clear_color(self.clear_color);
         self.active_gl.clear();
+
+        self.framebuffers[0].bind();
+        self.active_gl.clear_color(Color::new(0, 0, 0, 255));
+        self.active_gl.clear();
+        self.framebuffers[0].unbind();
     }
 
     pub(super) fn get_widget_context<'b>(
@@ -132,27 +138,25 @@ impl<'a> ActiveRenderCtx<'a> {
     }
 
     pub(super) fn draw_shadow(&mut self, rect: Rect<i32, PixelSize>) {
+        let frect = rect.cast();
+        self.active_gl.set_stencil_test(false);
         self.framebuffers[0].bind();
-
         {
             let active_shader = self.clr_quad_shader.use_program(&mut self.active_gl);
             self.clr_quad_arr
-                .push(ColorQuad::new(self.rect.cast(), Color::new(0, 0, 0, 255)));
-            //self.clr_quad_arr.flush(&active_shader);
-            self.clr_quad_arr
-                .push(ColorQuad::new(rect.cast(), Color::new(255, 0, 0, 255)));
+                .push(ColorQuad::new(frect, Color::new(255, 0, 0, 255)));
             self.clr_quad_arr.flush(&active_shader);
         }
-
         self.framebuffers[0].unbind();
-        self.framebuffers[0].bind_texture();
-
         {
+            let tex = self.framebuffers[0].get_texture();
             let active_shader = self.shadow_shader.use_program(&mut self.active_gl);
-            self.tex_quad_arr.push(TexQuad::new(
-                self.rect.cast(),
-                Rect::new(point2(0.0, 1.0), size2(1.0, -1.0)),
-            ));
+            let trect = tex.get_tex_dimensions(rect);
+            let quad = TexQuad::new(
+                Rect::new(frect.origin, frect.size * 1.2),
+                Rect::new(trect.origin, trect.size * 1.2),
+            );
+            self.tex_quad_arr.push(quad);
             self.tex_quad_arr.flush(&active_shader);
         }
     }
@@ -248,19 +252,6 @@ impl<'a, 'b> WidgetRenderCtx<'a, 'b> {
 impl<'a, 'b> Drop for WidgetRenderCtx<'a, 'b> {
     fn drop(&mut self) {
         self.flush();
-        // Activate stencil clearing
-        self.active_ctx.active_gl.set_stencil_clearing(true);
-        // Draw background and write to stencil
-        {
-            let active_shader = self
-                .active_ctx
-                .clr_quad_shader
-                .use_program(&mut self.active_ctx.active_gl);
-            self.active_ctx
-                .clr_quad_arr
-                .push(ColorQuad::new(self.rect.cast(), self.background_color));
-            self.active_ctx.clr_quad_arr.flush(&active_shader);
-        }
-        self.active_ctx.active_gl.set_stencil_clearing(false);
+        self.active_ctx.active_gl.clear_stencil();
     }
 }
