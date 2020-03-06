@@ -148,6 +148,9 @@ impl TextView {
         }
         self.cursor_style = style;
         self.snap_to_cursor();
+        if self.views[self.cur_view_idx].relative_number {
+            self.refresh();
+        }
     }
 
     pub(super) fn move_cursor_to_point(&mut self, mut point: (i32, i32)) {
@@ -168,7 +171,7 @@ impl TextView {
         let mut linum = 0;
         for i in 0..self.lines.len() {
             let mut height = self.lines[i].metrics.height as i32;
-            if view.line_numbers {
+            if view.line_numbers || view.relative_number {
                 height = max(height, self.gutter[i].metrics.height as i32);
             }
             total_height += height;
@@ -218,6 +221,9 @@ impl TextView {
             );
         }
         self.snap_to_cursor();
+        if self.views[self.cur_view_idx].relative_number {
+            self.refresh();
+        }
     }
 
     pub(super) fn move_cursor_down(&mut self, n: usize) {
@@ -227,6 +233,9 @@ impl TextView {
             buffer.move_cursor_down(&mut view.cursor, n);
         }
         self.snap_to_cursor();
+        if self.views[self.cur_view_idx].relative_number {
+            self.refresh();
+        }
     }
 
     pub(super) fn move_cursor_up(&mut self, n: usize) {
@@ -236,6 +245,9 @@ impl TextView {
             buffer.move_cursor_up(&mut view.cursor, n);
         }
         self.snap_to_cursor();
+        if self.views[self.cur_view_idx].relative_number {
+            self.refresh();
+        }
     }
 
     pub(super) fn move_cursor_left(&mut self, n: usize) {
@@ -245,6 +257,9 @@ impl TextView {
             buffer.move_cursor_left(&mut view.cursor, n);
         }
         self.snap_to_cursor();
+        if self.views[self.cur_view_idx].relative_number {
+            self.refresh();
+        }
     }
 
     pub(super) fn move_cursor_right(&mut self, n: usize) {
@@ -254,6 +269,9 @@ impl TextView {
             buffer.move_cursor_right(&mut view.cursor, n);
         }
         self.snap_to_cursor();
+        if self.views[self.cur_view_idx].relative_number {
+            self.refresh();
+        }
     }
 
     pub(super) fn move_cursor_start_of_line(&mut self) {
@@ -263,6 +281,9 @@ impl TextView {
             buffer.move_cursor_start_of_line(&mut view.cursor);
         }
         self.snap_to_cursor();
+        if self.views[self.cur_view_idx].relative_number {
+            self.refresh();
+        }
     }
 
     pub(super) fn move_cursor_end_of_line(&mut self) {
@@ -272,6 +293,9 @@ impl TextView {
             buffer.move_cursor_end_of_line(&mut view.cursor);
         }
         self.snap_to_cursor();
+        if self.views[self.cur_view_idx].relative_number {
+            self.refresh();
+        }
     }
 
     pub(super) fn page_up(&mut self) {
@@ -297,7 +321,7 @@ impl TextView {
                 let mut height = fmtline.metrics.height;
                 self.lines.push_front(fmtline);
 
-                if view.line_numbers {
+                if view.line_numbers || view.relative_number {
                     buf.clear();
                     write!(&mut buf, "{}", linum).unwrap();
                     let gutterline = ShapedTextLine::from_textstr(
@@ -351,6 +375,9 @@ impl TextView {
             buffer.move_cursor_to_line(&mut view.cursor, linum);
         }
         self.snap_to_cursor();
+        if self.views[self.cur_view_idx].relative_number {
+            self.refresh();
+        }
     }
 
     pub(super) fn go_to_last_line(&mut self) {
@@ -360,6 +387,9 @@ impl TextView {
             buffer.move_cursor_to_last_line(&mut view.cursor);
         }
         self.snap_to_cursor();
+        if self.views[self.cur_view_idx].relative_number {
+            self.refresh();
+        }
     }
 
     pub(super) fn delete_left(&mut self, n: usize) {
@@ -474,6 +504,7 @@ impl TextView {
 
     pub(super) fn scroll(&mut self, amts: (i32, i32)) {
         let view = &mut self.views[self.cur_view_idx];
+        let cursor_linum = view.cursor.line_num();
         // Scroll x
         let mut x = view.xbase as i32;
         x += amts.0;
@@ -507,9 +538,19 @@ impl TextView {
                     let mut height = fmtline.metrics.height;
                     self.lines.push_front(fmtline);
 
-                    if view.line_numbers {
+                    if view.line_numbers || view.relative_number {
                         buf.clear();
-                        write!(&mut buf, "{}", linum).unwrap();
+                        if view.relative_number {
+                            if linum < cursor_linum + 1 {
+                                write!(&mut buf, "{}", cursor_linum + 1 - linum).unwrap();
+                            } else if linum == cursor_linum + 1 && view.line_numbers {
+                                write!(&mut buf, "{}", cursor_linum + 1).unwrap();
+                            } else {
+                                write!(&mut buf, "{}", linum - cursor_linum - 1).unwrap();
+                            }
+                        } else {
+                            write!(&mut buf, "{}", linum).unwrap();
+                        }
                         let gutterline = ShapedTextLine::from_textstr(
                             textstr(&buf, self.gutter_textsize, self.gutter_foreground_color),
                             self.fixed_face,
@@ -539,7 +580,7 @@ impl TextView {
             // Scroll down
             let mut found = false;
             while let Some(line) = self.lines.pop_front() {
-                if view.line_numbers {
+                if view.line_numbers || view.relative_number {
                     let gutterline = self.gutter.pop_front().unwrap();
                     let height = max(line.metrics.height, gutterline.metrics.height) as i32;
                     if y < height {
@@ -577,9 +618,19 @@ impl TextView {
                             self.dpi,
                         );
 
-                        if view.line_numbers {
+                        if view.line_numbers || view.relative_number {
                             buf.clear();
-                            write!(&mut buf, "{}", linum).unwrap();
+                            if view.relative_number {
+                                if linum < cursor_linum + 1 {
+                                    write!(&mut buf, "{}", cursor_linum + 1 - linum).unwrap();
+                                } else if linum == cursor_linum + 1 && view.line_numbers {
+                                    write!(&mut buf, "{}", cursor_linum + 1).unwrap();
+                                } else {
+                                    write!(&mut buf, "{}", linum - cursor_linum - 1).unwrap();
+                                }
+                            } else {
+                                write!(&mut buf, "{}", linum).unwrap();
+                            }
                             let gutterline = ShapedTextLine::from_textstr(
                                 textstr(&buf, self.gutter_textsize, self.gutter_foreground_color),
                                 self.fixed_face,
@@ -633,6 +684,7 @@ impl TextView {
 
     pub(super) fn draw(&mut self, actx: &mut ActiveRenderCtx) {
         let view = &self.views[self.cur_view_idx];
+        let cursor_linum = view.cursor.line_num();
         let mut textview_rect = self.rect.cast();
         let font_core = &mut *self.font_core.borrow_mut();
 
@@ -647,7 +699,7 @@ impl TextView {
                 let mut baseline = pos;
                 let mut ascender = line.metrics.ascender;
                 let mut height = line.metrics.height as i32;
-                if view.line_numbers {
+                if view.line_numbers || view.relative_number {
                     ascender = max(ascender, self.gutter[i].metrics.ascender);
                     height = max(height, self.gutter[i].metrics.height as i32);
                 }
@@ -683,7 +735,7 @@ impl TextView {
             -(view.ybase as i32),
         );
 
-        if view.line_numbers {
+        if view.line_numbers || view.relative_number {
             for i in 0..self.gutter.len() {
                 let gline = &self.gutter[i];
                 let mut baseline = pos;
@@ -691,6 +743,10 @@ impl TextView {
                 baseline.y += ascender;
                 baseline.x -= gline.metrics.width as i32;
                 let height = max(self.lines[i].metrics.height, gline.metrics.height) as i32;
+                if view.line_numbers && view.relative_number && i + view.start_line == cursor_linum
+                {
+                    baseline.x = self.gutter_padding as i32;
+                }
                 gline.draw(&mut ctx, ascender, height, baseline, font_core, None);
                 pos.y += height;
             }
@@ -699,6 +755,7 @@ impl TextView {
 
     pub(super) fn refresh(&mut self) {
         let view = &mut self.views[self.cur_view_idx];
+        let cursor_linum = view.cursor.line_num();
         let buffer = &mut *view.buffer.borrow_mut();
         let pos = buffer.get_pos_at_line(view.start_line);
         view.start_line = pos.line_num();
@@ -709,7 +766,7 @@ impl TextView {
 
         // Max gutter width, to accomodate last line number of buffer
         let mut buf = format!("{}", buffer.len_lines());
-        if view.line_numbers {
+        if view.line_numbers || view.relative_number {
             let line = ShapedTextLine::from_textstr(
                 textstr(&buf, self.gutter_textsize, self.gutter_foreground_color),
                 self.fixed_face,
@@ -735,9 +792,19 @@ impl TextView {
             let mut height = fmtline.metrics.height;
             self.lines.push_back(fmtline);
 
-            if view.line_numbers {
+            if view.line_numbers || view.relative_number {
                 buf.clear();
-                write!(&mut buf, "{}", linum).unwrap();
+                if view.relative_number {
+                    if linum < cursor_linum + 1 {
+                        write!(&mut buf, "{}", cursor_linum + 1 - linum).unwrap();
+                    } else if linum == cursor_linum + 1 && view.line_numbers {
+                        write!(&mut buf, "{}", cursor_linum + 1).unwrap();
+                    } else {
+                        write!(&mut buf, "{}", linum - cursor_linum - 1).unwrap();
+                    }
+                } else {
+                    write!(&mut buf, "{}", linum).unwrap();
+                }
                 let gutterline = ShapedTextLine::from_textstr(
                     textstr(&buf, self.gutter_textsize, self.gutter_foreground_color),
                     self.fixed_face,
@@ -769,18 +836,30 @@ impl TextView {
         self.refresh();
     }
 
+    pub(super) fn set_relative_number(&mut self, val: bool) {
+        let view = &mut self.views[self.cur_view_idx];
+        view.relative_number = val;
+        self.refresh();
+    }
+
+    pub(super) fn toggle_relative_number(&mut self) {
+        let view = &mut self.views[self.cur_view_idx];
+        view.relative_number = !view.relative_number;
+        self.refresh();
+    }
+
     fn trim_lines_at_end(&mut self) {
         let view = &self.views[self.cur_view_idx];
         let mut total_height = 0;
         for i in 0..self.lines.len() {
             let mut height = self.lines[i].metrics.height;
-            if view.line_numbers {
+            if view.line_numbers || view.relative_number {
                 height = max(height, self.gutter[i].metrics.height);
             }
             total_height += height;
         }
         while let Some(line) = self.lines.pop_back() {
-            if view.line_numbers {
+            if view.line_numbers || view.relative_number {
                 let gutterline = self.gutter.pop_back().unwrap();
                 let height = max(line.metrics.height, gutterline.metrics.height);
                 if total_height - height < self.rect.size.height + view.ybase {
@@ -805,13 +884,13 @@ impl TextView {
         let mut total_height = 0;
         for i in 0..self.lines.len() {
             let mut height = self.lines[i].metrics.height;
-            if view.line_numbers {
+            if view.line_numbers || view.relative_number {
                 height = max(height, self.gutter[i].metrics.height);
             }
             total_height += height;
         }
         while let Some(line) = self.lines.pop_front() {
-            if view.line_numbers {
+            if view.line_numbers || view.relative_number {
                 let gutterline = self.gutter.pop_front().unwrap();
                 let height = max(line.metrics.height, gutterline.metrics.height);
                 if total_height - height < self.rect.size.height + view.ybase {
@@ -834,11 +913,12 @@ impl TextView {
 
     fn fill_lines_at_end(&mut self) {
         let view = &mut self.views[self.cur_view_idx];
+        let cursor_linum = view.cursor.line_num();
         let start_line = view.start_line + self.lines.len();
         let mut total_height = 0;
         for i in 0..self.lines.len() {
             let mut height = self.lines[i].metrics.height;
-            if view.line_numbers {
+            if view.line_numbers || view.relative_number {
                 height = max(height, self.gutter[i].metrics.height);
             }
             total_height += height;
@@ -865,9 +945,19 @@ impl TextView {
             let mut height = fmtline.metrics.height;
             self.lines.push_back(fmtline);
 
-            if view.line_numbers {
+            if view.line_numbers || view.relative_number {
                 buf.clear();
-                write!(&mut buf, "{}", linum).unwrap();
+                if view.relative_number {
+                    if linum < cursor_linum + 1 {
+                        write!(&mut buf, "{}", cursor_linum + 1 - linum).unwrap();
+                    } else if linum == cursor_linum + 1 && view.line_numbers {
+                        write!(&mut buf, "{}", cursor_linum + 1).unwrap();
+                    } else {
+                        write!(&mut buf, "{}", linum - cursor_linum - 1).unwrap();
+                    }
+                } else {
+                    write!(&mut buf, "{}", linum).unwrap();
+                }
                 let gutterline = ShapedTextLine::from_textstr(
                     textstr(&buf, self.gutter_textsize, self.gutter_foreground_color),
                     self.fixed_face,
@@ -901,7 +991,7 @@ impl TextView {
         let cursor_linum = view.cursor.line_num();
         for i in 0..self.lines.len() {
             let mut height = self.lines[i].metrics.height;
-            if view.line_numbers {
+            if view.line_numbers || view.relative_number {
                 height = max(height, self.gutter[i].metrics.height);
             }
             lines_height += height;
@@ -924,9 +1014,19 @@ impl TextView {
                     );
                     self.lines.push_front(fmtline);
 
-                    if view.line_numbers {
+                    if view.line_numbers || view.relative_number {
                         buf.clear();
-                        write!(&mut buf, "{}", linum).unwrap();
+                        if view.relative_number {
+                            if linum < cursor_linum {
+                                write!(&mut buf, "{}", cursor_linum - linum).unwrap();
+                            } else if linum == cursor_linum && view.line_numbers {
+                                write!(&mut buf, "{}", cursor_linum).unwrap();
+                            } else {
+                                write!(&mut buf, "{}", linum - cursor_linum).unwrap();
+                            }
+                        } else {
+                            write!(&mut buf, "{}", linum).unwrap();
+                        }
                         let gutterline = ShapedTextLine::from_textstr(
                             textstr(&buf, self.gutter_textsize, self.gutter_foreground_color),
                             self.fixed_face,
@@ -973,9 +1073,19 @@ impl TextView {
                     let mut height = fmtline.metrics.height;
                     self.lines.push_back(fmtline);
 
-                    if view.line_numbers {
+                    if view.line_numbers || view.relative_number {
                         buf.clear();
-                        write!(&mut buf, "{}", linum).unwrap();
+                        if view.relative_number {
+                            if linum < cursor_linum + 1 {
+                                write!(&mut buf, "{}", cursor_linum + 1 - linum).unwrap();
+                            } else if linum == cursor_linum + 1 && view.line_numbers {
+                                write!(&mut buf, "{}", cursor_linum + 1).unwrap();
+                            } else {
+                                write!(&mut buf, "{}", linum - cursor_linum - 1).unwrap();
+                            }
+                        } else {
+                            write!(&mut buf, "{}", linum).unwrap();
+                        }
                         let gutterline = ShapedTextLine::from_textstr(
                             textstr(&buf, self.gutter_textsize, self.gutter_foreground_color),
                             self.fixed_face,
@@ -1003,7 +1113,7 @@ impl TextView {
             // If cursor is at last line
             loop {
                 let mut height = self.lines[0].metrics.height;
-                if view.line_numbers {
+                if view.line_numbers || view.relative_number {
                     height = max(height, self.gutter[0].metrics.height);
                 }
                 if lines_height - height < self.rect.size.height + view.ybase {
@@ -1011,7 +1121,7 @@ impl TextView {
                 }
                 lines_height -= height;
                 self.lines.pop_front();
-                if view.line_numbers {
+                if view.line_numbers || view.relative_number {
                     self.gutter.pop_front();
                 }
             }

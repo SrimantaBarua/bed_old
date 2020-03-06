@@ -373,6 +373,11 @@ impl Window {
                         self.input_state.mode = InputMode::Normal;
                         self.fuzzy_popup.set_active(false);
                     }
+                    "relative_number" => {
+                        self.textview.toggle_relative_number();
+                        self.input_state.mode = InputMode::Normal;
+                        self.fuzzy_popup.set_active(false);
+                    }
                     "buffer_prev" => {
                         self.textview.prev_buffer();
                         self.input_state.mode = InputMode::Normal;
