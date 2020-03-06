@@ -17,6 +17,8 @@ use super::text::{ShapedTextLine, TextCursorStyle, TextSpan};
 
 struct View {
     start_line: usize,
+    xbase: u32,
+    ybase: u32,
     buffer: Rc<RefCell<Buffer>>,
     cursor: BufferCursor,
 }
@@ -37,8 +39,6 @@ pub(super) struct TextView {
     gutter_background_color: Color,
     dpi: Size2D<u32, DPI>,
     font_core: Rc<RefCell<FontCore>>,
-    xbase: u32,
-    ybase: u32,
     line_numbers: bool,
     cursor_color: Color,
     cursor_style: TextCursorStyle,
@@ -68,6 +68,8 @@ impl TextView {
         };
         let views = vec![View {
             start_line: 0,
+            xbase: 0,
+            ybase: 0,
             buffer: buffer,
             cursor: cursor,
         }];
@@ -83,8 +85,6 @@ impl TextView {
             gutter_width: 0,
             font_core: font_core,
             dpi: dpi,
-            xbase: 0,
-            ybase: 0,
             line_numbers: line_numbers,
             gutter_padding: gutter_padding,
             gutter_textsize: gutter_textsize,
@@ -105,12 +105,26 @@ impl TextView {
         };
         self.views.push(View {
             start_line: 0,
+            xbase: 0,
+            ybase: 0,
             buffer: buffer,
             cursor: cursor,
         });
         self.cur_view_idx += 1;
-        self.xbase = 0;
-        self.ybase = 0;
+        self.refresh();
+    }
+
+    pub(super) fn prev_buffer(&mut self) {
+        if self.cur_view_idx == 0 {
+            self.cur_view_idx = self.views.len() - 1;
+        } else {
+            self.cur_view_idx -= 1;
+        }
+        self.refresh();
+    }
+
+    pub(super) fn next_buffer(&mut self) {
+        self.cur_view_idx = (self.cur_view_idx + 1) % self.views.len();
         self.refresh();
     }
 
@@ -128,6 +142,7 @@ impl TextView {
     }
 
     pub(super) fn move_cursor_to_point(&mut self, mut point: (i32, i32)) {
+        let view = &self.views[self.cur_view_idx];
         if point.0 < 0 {
             point.0 = 0;
         } else if point.0 > self.rect.size.width as i32 {
@@ -138,8 +153,8 @@ impl TextView {
         } else if point.1 > self.rect.size.height as i32 {
             point.1 = self.rect.size.height as i32;
         }
-        point.0 += self.xbase as i32 - self.gutter_width as i32;
-        point.1 += self.ybase as i32;
+        point.0 += view.xbase as i32 - self.gutter_width as i32;
+        point.1 += view.ybase as i32;
         let mut total_height = 0;
         let mut linum = 0;
         for i in 0..self.lines.len() {
@@ -251,10 +266,10 @@ impl TextView {
     }
 
     pub(super) fn page_up(&mut self) {
-        self.ybase = 0;
         let mut buf = String::new();
         self.lines.clear();
         let view = &mut self.views[self.cur_view_idx];
+        view.ybase = 0;
         {
             let font_core = &mut *self.font_core.borrow_mut();
             let buffer = &mut *view.buffer.borrow_mut();
@@ -449,10 +464,11 @@ impl TextView {
     }
 
     pub(super) fn scroll(&mut self, amts: (i32, i32)) {
+        let view = &mut self.views[self.cur_view_idx];
         // Scroll x
-        let mut x = self.xbase as i32;
+        let mut x = view.xbase as i32;
         x += amts.0;
-        self.xbase = if x < 0 {
+        view.xbase = if x < 0 {
             0
         } else {
             // TODO Get max width of lines and make sure x is bounded such that the longest line
@@ -460,9 +476,8 @@ impl TextView {
             x as u32
         };
         // Scroll y
-        let view = &mut self.views[self.cur_view_idx];
         let mut buf = String::new();
-        let mut y = self.ybase as i32;
+        let mut y = view.ybase as i32;
         y += amts.1;
         if y < 0 {
             // Scroll up
@@ -509,7 +524,7 @@ impl TextView {
             if y < 0 {
                 y = 0;
             }
-            self.ybase = y as u32;
+            view.ybase = y as u32;
             self.trim_lines_at_end();
         } else if amts.1 > 0 {
             // Scroll down
@@ -594,11 +609,11 @@ impl TextView {
                     y = 0;
                 }
             }
-            self.ybase = y as u32;
+            view.ybase = y as u32;
             self.fill_lines_at_end();
             self.trim_lines_at_start();
         } else {
-            self.ybase = y as u32;
+            view.ybase = y as u32;
         }
     }
 
@@ -608,6 +623,7 @@ impl TextView {
     }
 
     pub(super) fn draw(&mut self, actx: &mut ActiveRenderCtx) {
+        let view = &self.views[self.cur_view_idx];
         let mut textview_rect = self.rect.cast();
         let font_core = &mut *self.font_core.borrow_mut();
 
@@ -615,9 +631,7 @@ impl TextView {
         textview_rect.size.width -= self.gutter_width as i32;
         {
             let mut ctx = actx.get_widget_context(textview_rect, self.background_color);
-            let mut pos = point2(-(self.xbase as i32), -(self.ybase as i32));
-
-            let view = &mut self.views[self.cur_view_idx];
+            let mut pos = point2(-(view.xbase as i32), -(view.ybase as i32));
 
             for i in 0..self.lines.len() {
                 let line = &self.lines[i];
@@ -649,7 +663,7 @@ impl TextView {
         )
         .cast();
 
-        if self.xbase > 0 {
+        if view.xbase > 0 {
             let vec = point2(5, 0).to_vector();
             actx.draw_shadow(rect.translate(vec));
         }
@@ -657,7 +671,7 @@ impl TextView {
         let mut ctx = actx.get_widget_context(rect, self.gutter_background_color);
         let mut pos = point2(
             (self.gutter_width - self.gutter_padding) as i32,
-            -(self.ybase as i32),
+            -(view.ybase as i32),
         );
 
         if self.line_numbers {
@@ -728,7 +742,7 @@ impl TextView {
 
             linum += 1;
             total_height += height;
-            if total_height >= self.rect.size.height + self.ybase {
+            if total_height >= self.rect.size.height + view.ybase {
                 break;
             }
         }
@@ -745,6 +759,7 @@ impl TextView {
     }
 
     fn trim_lines_at_end(&mut self) {
+        let view = &self.views[self.cur_view_idx];
         let mut total_height = 0;
         for i in 0..self.lines.len() {
             let mut height = self.lines[i].metrics.height;
@@ -757,7 +772,7 @@ impl TextView {
             if self.line_numbers {
                 let gutterline = self.gutter.pop_back().unwrap();
                 let height = max(line.metrics.height, gutterline.metrics.height);
-                if total_height - height < self.rect.size.height + self.ybase {
+                if total_height - height < self.rect.size.height + view.ybase {
                     self.lines.push_back(line);
                     self.gutter.push_back(gutterline);
                     break;
@@ -765,7 +780,7 @@ impl TextView {
                 total_height -= height;
             } else {
                 let height = line.metrics.height;
-                if total_height - height < self.rect.size.height + self.ybase {
+                if total_height - height < self.rect.size.height + view.ybase {
                     self.lines.push_back(line);
                     break;
                 }
@@ -788,7 +803,7 @@ impl TextView {
             if self.line_numbers {
                 let gutterline = self.gutter.pop_front().unwrap();
                 let height = max(line.metrics.height, gutterline.metrics.height);
-                if total_height - height < self.rect.size.height + self.ybase {
+                if total_height - height < self.rect.size.height + view.ybase {
                     self.lines.push_front(line);
                     self.gutter.push_front(gutterline);
                     break;
@@ -796,7 +811,7 @@ impl TextView {
                 total_height -= height;
             } else {
                 let height = line.metrics.height;
-                if total_height - height < self.rect.size.height + self.ybase {
+                if total_height - height < self.rect.size.height + view.ybase {
                     self.lines.push_front(line);
                     break;
                 }
@@ -818,7 +833,7 @@ impl TextView {
             total_height += height;
         }
         let buffer = &mut *view.buffer.borrow_mut();
-        if start_line >= buffer.len_lines() || total_height >= self.rect.size.height + self.ybase {
+        if start_line >= buffer.len_lines() || total_height >= self.rect.size.height + view.ybase {
             return;
         }
         let pos = buffer.get_pos_at_line(start_line);
@@ -856,7 +871,7 @@ impl TextView {
             linum += 1;
             total_height += height;
 
-            if total_height >= self.rect.size.height + self.ybase {
+            if total_height >= self.rect.size.height + view.ybase {
                 break;
             }
         }
@@ -919,11 +934,11 @@ impl TextView {
                     }
                 }
             }
-            self.ybase = 0;
+            view.ybase = 0;
             self.trim_lines_at_end();
-        } else if cursor_linum == view.start_line && self.ybase != 0 {
+        } else if cursor_linum == view.start_line && view.ybase != 0 {
             // If cursor is at start line but y is not zero
-            self.ybase = 0;
+            view.ybase = 0;
             self.trim_lines_at_end();
         } else if lines_height >= self.rect.size.height
             && cursor_linum >= view.start_line + num_lines
@@ -980,7 +995,7 @@ impl TextView {
                 if self.line_numbers {
                     height = max(height, self.gutter[0].metrics.height);
                 }
-                if lines_height - height < self.rect.size.height + self.ybase {
+                if lines_height - height < self.rect.size.height + view.ybase {
                     break;
                 }
                 lines_height -= height;
@@ -990,9 +1005,9 @@ impl TextView {
                 }
             }
             if lines_height <= self.rect.size.height {
-                self.ybase = 0;
+                view.ybase = 0;
             } else {
-                self.ybase = lines_height - self.rect.size.height;
+                view.ybase = lines_height - self.rect.size.height;
             }
         }
     }
@@ -1032,10 +1047,10 @@ impl TextView {
                 } else {
                     cursor_width as u32
                 };
-                if cursor_x < self.xbase {
-                    self.xbase = cursor_x;
-                } else if cursor_x + cursor_width > self.xbase + width {
-                    self.xbase = cursor_x + cursor_width - width;
+                if cursor_x < view.xbase {
+                    view.xbase = cursor_x;
+                } else if cursor_x + cursor_width > view.xbase + width {
+                    view.xbase = cursor_x + cursor_width - width;
                 }
                 return;
             }

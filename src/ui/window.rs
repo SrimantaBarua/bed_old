@@ -371,6 +371,16 @@ impl Window {
                         self.input_state.mode = InputMode::Normal;
                         self.fuzzy_popup.set_active(false);
                     }
+                    "buffer_prev" => {
+                        self.textview.prev_buffer();
+                        self.input_state.mode = InputMode::Normal;
+                        self.fuzzy_popup.set_active(false);
+                    }
+                    "buffer_next" => {
+                        self.textview.next_buffer();
+                        self.input_state.mode = InputMode::Normal;
+                        self.fuzzy_popup.set_active(false);
+                    }
                     _ => {
                         self.input_state.mode = InputMode::Normal;
                         self.fuzzy_popup.set_active(false);
