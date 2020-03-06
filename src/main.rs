@@ -1,5 +1,6 @@
 // (C) 2020 Srimanta Barua <srimanta.barua1@gmail.com>
 
+use std::path::Path;
 use std::{thread, time};
 
 mod core;
@@ -16,9 +17,22 @@ fn main() {
 
     let mut core = core::Core::new();
     let buffer = match args.value_of("FILE") {
-        Some(path) => core
-            .new_buffer_from_file(path)
-            .expect("failed to open file"),
+        Some(spath) => {
+            let path = Path::new(spath);
+            if path.is_absolute() {
+                core.new_buffer_from_file(spath)
+                    .expect("failed to open file")
+            } else {
+                let mut working_directory =
+                    std::env::current_dir().expect("failed to get current directory");
+                working_directory.push(path);
+                let spath = working_directory
+                    .to_str()
+                    .expect("failed to convert path to string");
+                core.new_buffer_from_file(spath)
+                    .expect("failed to open file")
+            }
+        }
         None => core.new_empty_buffer(),
     };
 

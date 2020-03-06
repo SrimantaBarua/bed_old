@@ -16,7 +16,7 @@ use unicode_segmentation::{GraphemeCursor, GraphemeIncomplete};
 use crate::types::{Color, TextPitch, TextSize, TextSlant, TextStyle, TextWeight};
 use crate::ui::text::{TextLine, TextSpan};
 
-static TEXT_FG_COLOR: Color = Color::new(64, 64, 64, 255);
+static TEXT_FG_COLOR: Color = Color::new(96, 96, 96, 255);
 static TEXT_SIZE: f32 = 8.0;
 
 /// A cursor into the buffer. The buffer maintains references to all cursors, so they are
@@ -134,6 +134,7 @@ impl BufferPos {
 pub(crate) struct Buffer {
     data: Rope,
     tabsize: usize,
+    path: Option<String>,
     cursors: HashMap<usize, Weak<RefCell<BufferCursorInner>>>,
 }
 
@@ -143,6 +144,7 @@ impl Buffer {
         Buffer {
             data: Rope::new(),
             cursors: HashMap::new(),
+            path: None,
             tabsize: tabsize,
         }
     }
@@ -154,8 +156,32 @@ impl Buffer {
             .map(|r| Buffer {
                 data: r,
                 cursors: HashMap::new(),
+                path: Some(path.to_owned()),
                 tabsize: tabsize,
             })
+    }
+
+    /// Reload buffer contents and reset all cursors
+    pub(crate) fn reload_from_file(&mut self) -> IOResult<()> {
+        if let Some(path) = &self.path {
+            File::open(path)
+                .and_then(|f| Rope::from_reader(f))
+                .map(|r| {
+                    self.data = r;
+                    self.clean_cursors();
+                    let len_chars = self.data.len_chars();
+                    for (_, weak) in self.cursors.iter_mut() {
+                        let strong = weak.upgrade().unwrap();
+                        let inner = &mut *strong.borrow_mut();
+                        if inner.char_idx >= len_chars {
+                            inner.char_idx = len_chars;
+                            inner.sync_from_and_udpate_char_idx_left(&self.data, self.tabsize);
+                        }
+                    }
+                })
+        } else {
+            unreachable!()
+        }
     }
 
     /// Set buffer tabsize
@@ -622,6 +648,10 @@ impl Buffer {
     fn clean_cursors_except(&mut self, view_id: usize) {
         self.cursors
             .retain(|&key, weak| key == view_id || weak.strong_count() > 0);
+    }
+
+    fn clean_cursors(&mut self) {
+        self.cursors.retain(|_, weak| weak.strong_count() > 0);
     }
 }
 

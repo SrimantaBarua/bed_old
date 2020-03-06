@@ -129,11 +129,13 @@ impl TextView {
         } else {
             self.cur_view_idx -= 1;
         }
+        self.snap_to_cursor();
         self.refresh();
     }
 
     pub(super) fn next_buffer(&mut self) {
         self.cur_view_idx = (self.cur_view_idx + 1) % self.views.len();
+        self.snap_to_cursor();
         self.refresh();
     }
 
