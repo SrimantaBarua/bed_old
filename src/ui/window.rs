@@ -153,6 +153,7 @@ impl Window {
             font_core.clone(),
             dpi,
             true,
+            false,
             GUTTER_PADDING,
             TextSize::from_f32(GUTTER_TEXTSIZE),
             GUTTER_FG_COLOR,
