@@ -138,16 +138,17 @@ impl TextView {
         } else if point.1 > self.rect.size.height as i32 {
             point.1 = self.rect.size.height as i32;
         }
-        point.0 += self.xbase as i32;
+        point.0 += self.xbase as i32 - self.gutter_width as i32;
         point.1 += self.ybase as i32;
-        if self.line_numbers {
-            point.0 -= self.gutter_width as i32;
-        }
-        let mut height = 0;
+        let mut total_height = 0;
         let mut linum = 0;
-        for line in &self.lines {
-            height += line.metrics.height as i32;
-            if height >= point.1 {
+        for i in 0..self.lines.len() {
+            let mut height = self.lines[i].metrics.height as i32;
+            if self.line_numbers {
+                height = max(height, self.gutter[i].metrics.height as i32);
+            }
+            total_height += height;
+            if total_height >= point.1 {
                 break;
             }
             linum += 1;
@@ -260,7 +261,7 @@ impl TextView {
             let pos = buffer.get_pos_at_line(view.start_line);
             let mut linum = view.start_line;
             let mut iter = buffer.fmt_lines_from_pos(&pos);
-            let mut height = 0;
+            let mut total_height = 0;
             while let Some(line) = iter.prev(&mut buf) {
                 let fmtline = ShapedTextLine::from_textline(
                     line,
@@ -269,24 +270,28 @@ impl TextView {
                     font_core,
                     self.dpi,
                 );
+                let mut height = fmtline.metrics.height;
+                self.lines.push_front(fmtline);
 
-                buf.clear();
-                write!(&mut buf, "{}", linum).unwrap();
-                let gutterline = ShapedTextLine::from_textstr(
-                    textstr(&buf, self.gutter_textsize, self.gutter_foreground_color),
-                    self.fixed_face,
-                    self.variable_face,
-                    font_core,
-                    self.dpi,
-                );
+                if self.line_numbers {
+                    buf.clear();
+                    write!(&mut buf, "{}", linum).unwrap();
+                    let gutterline = ShapedTextLine::from_textstr(
+                        textstr(&buf, self.gutter_textsize, self.gutter_foreground_color),
+                        self.fixed_face,
+                        self.variable_face,
+                        font_core,
+                        self.dpi,
+                    );
+                    height = max(height, gutterline.metrics.height);
+                    self.gutter.push_front(gutterline);
+                }
 
-                height += max(fmtline.metrics.height, gutterline.metrics.height);
+                total_height += height;
                 view.start_line -= 1;
                 linum -= 1;
-                self.lines.push_front(fmtline);
-                self.gutter.push_front(gutterline);
 
-                if height >= self.rect.size.height {
+                if total_height >= self.rect.size.height {
                     break;
                 }
             }
@@ -475,22 +480,26 @@ impl TextView {
                         font_core,
                         self.dpi,
                     );
+                    let mut height = fmtline.metrics.height;
+                    self.lines.push_front(fmtline);
 
-                    buf.clear();
-                    write!(&mut buf, "{}", linum).unwrap();
-                    let gutterline = ShapedTextLine::from_textstr(
-                        textstr(&buf, self.gutter_textsize, self.gutter_foreground_color),
-                        self.fixed_face,
-                        self.variable_face,
-                        font_core,
-                        self.dpi,
-                    );
+                    if self.line_numbers {
+                        buf.clear();
+                        write!(&mut buf, "{}", linum).unwrap();
+                        let gutterline = ShapedTextLine::from_textstr(
+                            textstr(&buf, self.gutter_textsize, self.gutter_foreground_color),
+                            self.fixed_face,
+                            self.variable_face,
+                            font_core,
+                            self.dpi,
+                        );
+                        height = max(height, gutterline.metrics.height);
+                        self.gutter.push_front(gutterline);
+                    }
 
-                    y += max(fmtline.metrics.height, gutterline.metrics.height) as i32;
+                    y += height as i32;
                     view.start_line -= 1;
                     linum -= 1;
-                    self.lines.push_front(fmtline);
-                    self.gutter.push_front(gutterline);
 
                     if y >= 0 {
                         break;
@@ -506,16 +515,25 @@ impl TextView {
             // Scroll down
             let mut found = false;
             while let Some(line) = self.lines.pop_front() {
-                let gutterline = self.gutter.pop_front().unwrap();
-                let height = max(line.metrics.height, gutterline.metrics.height) as i32;
-                if y < height {
-                    self.lines.push_front(line);
-                    self.gutter.push_front(gutterline);
-                    found = true;
-                    break;
+                if self.line_numbers {
+                    let gutterline = self.gutter.pop_front().unwrap();
+                    let height = max(line.metrics.height, gutterline.metrics.height) as i32;
+                    if y < height {
+                        self.lines.push_front(line);
+                        self.gutter.push_front(gutterline);
+                        found = true;
+                        break;
+                    }
+                    y -= height;
+                } else {
+                    if y < line.metrics.height as i32 {
+                        self.lines.push_front(line);
+                        found = true;
+                        break;
+                    }
+                    y -= line.metrics.height as i32;
                 }
                 view.start_line += 1;
-                y -= height;
             }
             if !found {
                 let font_core = &mut *self.font_core.borrow_mut();
@@ -535,24 +553,34 @@ impl TextView {
                             self.dpi,
                         );
 
-                        buf.clear();
-                        write!(&mut buf, "{}", linum).unwrap();
-                        let gutterline = ShapedTextLine::from_textstr(
-                            textstr(&buf, self.gutter_textsize, self.gutter_foreground_color),
-                            self.fixed_face,
-                            self.variable_face,
-                            font_core,
-                            self.dpi,
-                        );
-
-                        let height = max(fmtline.metrics.height, gutterline.metrics.height) as i32;
-                        if y < height {
-                            self.lines.push_back(fmtline);
-                            self.gutter.push_back(gutterline);
-                            found = true;
-                            break;
+                        if self.line_numbers {
+                            buf.clear();
+                            write!(&mut buf, "{}", linum).unwrap();
+                            let gutterline = ShapedTextLine::from_textstr(
+                                textstr(&buf, self.gutter_textsize, self.gutter_foreground_color),
+                                self.fixed_face,
+                                self.variable_face,
+                                font_core,
+                                self.dpi,
+                            );
+                            let height =
+                                max(fmtline.metrics.height, gutterline.metrics.height) as i32;
+                            if y < height {
+                                self.lines.push_back(fmtline);
+                                self.gutter.push_back(gutterline);
+                                found = true;
+                                break;
+                            }
+                            y -= height;
+                        } else {
+                            if y < fmtline.metrics.height as i32 {
+                                self.lines.push_back(fmtline);
+                                found = true;
+                                break;
+                            }
+                            y -= fmtline.metrics.height as i32;
                         }
-                        y -= height;
+
                         view.start_line += 1;
                         linum += 1;
                     }
@@ -583,11 +611,8 @@ impl TextView {
         let mut textview_rect = self.rect.cast();
         let font_core = &mut *self.font_core.borrow_mut();
 
-        if self.line_numbers {
-            textview_rect.origin.x += self.gutter_width as i32;
-            textview_rect.size.width -= self.gutter_width as i32;
-        }
-
+        textview_rect.origin.x += self.gutter_width as i32;
+        textview_rect.size.width -= self.gutter_width as i32;
         {
             let mut ctx = actx.get_widget_context(textview_rect, self.background_color);
             let mut pos = point2(-(self.xbase as i32), -(self.ybase as i32));
@@ -595,12 +620,15 @@ impl TextView {
             let view = &mut self.views[self.cur_view_idx];
 
             for i in 0..self.lines.len() {
-                let linum = view.start_line + i;
                 let line = &self.lines[i];
                 let mut baseline = pos;
-                let ascender = max(line.metrics.ascender, self.gutter[i].metrics.ascender);
+                let mut ascender = line.metrics.ascender;
+                let mut height = line.metrics.height as i32;
+                if self.line_numbers {
+                    ascender = max(ascender, self.gutter[i].metrics.ascender);
+                    height = max(height, self.gutter[i].metrics.height as i32);
+                }
                 baseline.y += ascender;
-                let height = max(line.metrics.height, self.gutter[i].metrics.height) as i32;
                 let cursor = if view.start_line + i == view.cursor.line_num() {
                     Some((
                         view.cursor.line_gidx(),
@@ -615,24 +643,24 @@ impl TextView {
             }
         }
 
+        let rect = Rect::new(
+            self.rect.origin,
+            size2(self.gutter_width, self.rect.size.height),
+        )
+        .cast();
+
+        if self.xbase > 0 {
+            let vec = point2(5, 0).to_vector();
+            actx.draw_shadow(rect.translate(vec));
+        }
+
+        let mut ctx = actx.get_widget_context(rect, self.gutter_background_color);
+        let mut pos = point2(
+            (self.gutter_width - self.gutter_padding) as i32,
+            -(self.ybase as i32),
+        );
+
         if self.line_numbers {
-            let rect = Rect::new(
-                self.rect.origin,
-                size2(self.gutter_width, self.rect.size.height),
-            )
-            .cast();
-
-            if self.xbase > 0 {
-                let vec = point2(5, 0).to_vector();
-                actx.draw_shadow(rect.translate(vec));
-            }
-
-            let mut ctx = actx.get_widget_context(rect, self.gutter_background_color);
-            let mut pos = point2(
-                (self.gutter_width - self.gutter_padding) as i32,
-                -(self.ybase as i32),
-            );
-
             for i in 0..self.gutter.len() {
                 let gline = &self.gutter[i];
                 let mut baseline = pos;
@@ -654,18 +682,22 @@ impl TextView {
         self.lines.clear();
         self.gutter.clear();
         let font_core = &mut *self.font_core.borrow_mut();
-        let (mut height, mut linum) = (0, view.start_line + 1);
+        let (mut total_height, mut linum) = (0, view.start_line + 1);
 
         // Max gutter width, to accomodate last line number of buffer
         let mut buf = format!("{}", buffer.len_lines());
-        let line = ShapedTextLine::from_textstr(
-            textstr(&buf, self.gutter_textsize, self.gutter_foreground_color),
-            self.fixed_face,
-            self.variable_face,
-            font_core,
-            self.dpi,
-        );
-        self.gutter_width = line.metrics.width + self.gutter_padding * 2;
+        if self.line_numbers {
+            let line = ShapedTextLine::from_textstr(
+                textstr(&buf, self.gutter_textsize, self.gutter_foreground_color),
+                self.fixed_face,
+                self.variable_face,
+                font_core,
+                self.dpi,
+            );
+            self.gutter_width = line.metrics.width + self.gutter_padding * 2;
+        } else {
+            self.gutter_width = self.gutter_padding;
+        }
 
         // Fill lines and gutter
         let mut iter = buffer.fmt_lines_from_pos(&pos);
@@ -677,21 +709,26 @@ impl TextView {
                 font_core,
                 self.dpi,
             );
-            buf.clear();
-            write!(&mut buf, "{}", linum).unwrap();
-            let gutterline = ShapedTextLine::from_textstr(
-                textstr(&buf, self.gutter_textsize, self.gutter_foreground_color),
-                self.fixed_face,
-                self.variable_face,
-                font_core,
-                self.dpi,
-            );
-
-            height += max(fmtline.metrics.height, gutterline.metrics.height);
-            linum += 1;
+            let mut height = fmtline.metrics.height;
             self.lines.push_back(fmtline);
-            self.gutter.push_back(gutterline);
-            if height >= self.rect.size.height + self.ybase {
+
+            if self.line_numbers {
+                buf.clear();
+                write!(&mut buf, "{}", linum).unwrap();
+                let gutterline = ShapedTextLine::from_textstr(
+                    textstr(&buf, self.gutter_textsize, self.gutter_foreground_color),
+                    self.fixed_face,
+                    self.variable_face,
+                    font_core,
+                    self.dpi,
+                );
+                height = max(height, gutterline.metrics.height);
+                self.gutter.push_back(gutterline);
+            }
+
+            linum += 1;
+            total_height += height;
+            if total_height >= self.rect.size.height + self.ybase {
                 break;
             }
         }
@@ -699,26 +736,41 @@ impl TextView {
 
     pub(super) fn set_line_numbers(&mut self, val: bool) {
         self.line_numbers = val;
+        self.refresh();
     }
 
     pub(super) fn toggle_line_numbers(&mut self) {
         self.line_numbers = !self.line_numbers;
+        self.refresh();
     }
 
     fn trim_lines_at_end(&mut self) {
         let mut total_height = 0;
         for i in 0..self.lines.len() {
-            total_height += max(self.lines[i].metrics.height, self.gutter[i].metrics.height);
+            let mut height = self.lines[i].metrics.height;
+            if self.line_numbers {
+                height = max(height, self.gutter[i].metrics.height);
+            }
+            total_height += height;
         }
         while let Some(line) = self.lines.pop_back() {
-            let gutterline = self.gutter.pop_back().unwrap();
-            let height = max(line.metrics.height, gutterline.metrics.height);
-            if total_height - height < self.rect.size.height + self.ybase {
-                self.lines.push_back(line);
-                self.gutter.push_back(gutterline);
-                break;
+            if self.line_numbers {
+                let gutterline = self.gutter.pop_back().unwrap();
+                let height = max(line.metrics.height, gutterline.metrics.height);
+                if total_height - height < self.rect.size.height + self.ybase {
+                    self.lines.push_back(line);
+                    self.gutter.push_back(gutterline);
+                    break;
+                }
+                total_height -= height;
+            } else {
+                let height = line.metrics.height;
+                if total_height - height < self.rect.size.height + self.ybase {
+                    self.lines.push_back(line);
+                    break;
+                }
+                total_height -= height;
             }
-            total_height -= height;
         }
     }
 
@@ -726,30 +778,47 @@ impl TextView {
         let view = &mut self.views[self.cur_view_idx];
         let mut total_height = 0;
         for i in 0..self.lines.len() {
-            total_height += max(self.lines[i].metrics.height, self.gutter[i].metrics.height);
+            let mut height = self.lines[i].metrics.height;
+            if self.line_numbers {
+                height = max(height, self.gutter[i].metrics.height);
+            }
+            total_height += height;
         }
         while let Some(line) = self.lines.pop_front() {
-            let gutterline = self.gutter.pop_front().unwrap();
-            let height = max(line.metrics.height, gutterline.metrics.height);
-            if total_height - height < self.rect.size.height + self.ybase {
-                self.lines.push_front(line);
-                self.gutter.push_front(gutterline);
-                break;
+            if self.line_numbers {
+                let gutterline = self.gutter.pop_front().unwrap();
+                let height = max(line.metrics.height, gutterline.metrics.height);
+                if total_height - height < self.rect.size.height + self.ybase {
+                    self.lines.push_front(line);
+                    self.gutter.push_front(gutterline);
+                    break;
+                }
+                total_height -= height;
+            } else {
+                let height = line.metrics.height;
+                if total_height - height < self.rect.size.height + self.ybase {
+                    self.lines.push_front(line);
+                    break;
+                }
+                total_height -= height;
             }
             view.start_line += 1;
-            total_height -= height;
         }
     }
 
     fn fill_lines_at_end(&mut self) {
         let view = &mut self.views[self.cur_view_idx];
         let start_line = view.start_line + self.lines.len();
-        let mut height = 0;
+        let mut total_height = 0;
         for i in 0..self.lines.len() {
-            height += max(self.lines[i].metrics.height, self.gutter[i].metrics.height);
+            let mut height = self.lines[i].metrics.height;
+            if self.line_numbers {
+                height = max(height, self.gutter[i].metrics.height);
+            }
+            total_height += height;
         }
         let buffer = &mut *view.buffer.borrow_mut();
-        if start_line >= buffer.len_lines() || height >= self.rect.size.height + self.ybase {
+        if start_line >= buffer.len_lines() || total_height >= self.rect.size.height + self.ybase {
             return;
         }
         let pos = buffer.get_pos_at_line(start_line);
@@ -767,23 +836,27 @@ impl TextView {
                 font_core,
                 self.dpi,
             );
-
-            buf.clear();
-            write!(&mut buf, "{}", linum).unwrap();
-            let gutterline = ShapedTextLine::from_textstr(
-                textstr(&buf, self.gutter_textsize, self.gutter_foreground_color),
-                self.fixed_face,
-                self.variable_face,
-                font_core,
-                self.dpi,
-            );
-
-            height += max(fmtline.metrics.height, gutterline.metrics.height);
-            linum += 1;
+            let mut height = fmtline.metrics.height;
             self.lines.push_back(fmtline);
-            self.gutter.push_back(gutterline);
 
-            if height >= self.rect.size.height + self.ybase {
+            if self.line_numbers {
+                buf.clear();
+                write!(&mut buf, "{}", linum).unwrap();
+                let gutterline = ShapedTextLine::from_textstr(
+                    textstr(&buf, self.gutter_textsize, self.gutter_foreground_color),
+                    self.fixed_face,
+                    self.variable_face,
+                    font_core,
+                    self.dpi,
+                );
+                height = max(height, gutterline.metrics.height);
+                self.gutter.push_back(gutterline);
+            }
+
+            linum += 1;
+            total_height += height;
+
+            if total_height >= self.rect.size.height + self.ybase {
                 break;
             }
         }
@@ -801,7 +874,11 @@ impl TextView {
         let mut lines_height = 0;
         let cursor_linum = view.cursor.line_num();
         for i in 0..self.lines.len() {
-            lines_height += max(self.lines[i].metrics.height, self.gutter[i].metrics.height);
+            let mut height = self.lines[i].metrics.height;
+            if self.line_numbers {
+                height = max(height, self.gutter[i].metrics.height);
+            }
+            lines_height += height;
         }
         if cursor_linum < view.start_line {
             // If cursor is before start line
@@ -819,21 +896,23 @@ impl TextView {
                         font_core,
                         self.dpi,
                     );
+                    self.lines.push_front(fmtline);
 
-                    buf.clear();
-                    write!(&mut buf, "{}", linum).unwrap();
-                    let gutterline = ShapedTextLine::from_textstr(
-                        textstr(&buf, self.gutter_textsize, self.gutter_foreground_color),
-                        self.fixed_face,
-                        self.variable_face,
-                        font_core,
-                        self.dpi,
-                    );
+                    if self.line_numbers {
+                        buf.clear();
+                        write!(&mut buf, "{}", linum).unwrap();
+                        let gutterline = ShapedTextLine::from_textstr(
+                            textstr(&buf, self.gutter_textsize, self.gutter_foreground_color),
+                            self.fixed_face,
+                            self.variable_face,
+                            font_core,
+                            self.dpi,
+                        );
+                        self.gutter.push_front(gutterline);
+                    }
 
                     view.start_line -= 1;
                     linum -= 1;
-                    self.lines.push_front(fmtline);
-                    self.gutter.push_front(gutterline);
 
                     if view.start_line == cursor_linum {
                         break;
@@ -865,23 +944,27 @@ impl TextView {
                         font_core,
                         self.dpi,
                     );
+                    let mut height = fmtline.metrics.height;
+                    self.lines.push_back(fmtline);
 
-                    buf.clear();
-                    write!(&mut buf, "{}", linum).unwrap();
-                    let gutterline = ShapedTextLine::from_textstr(
-                        textstr(&buf, self.gutter_textsize, self.gutter_foreground_color),
-                        self.fixed_face,
-                        self.variable_face,
-                        font_core,
-                        self.dpi,
-                    );
+                    if self.line_numbers {
+                        buf.clear();
+                        write!(&mut buf, "{}", linum).unwrap();
+                        let gutterline = ShapedTextLine::from_textstr(
+                            textstr(&buf, self.gutter_textsize, self.gutter_foreground_color),
+                            self.fixed_face,
+                            self.variable_face,
+                            font_core,
+                            self.dpi,
+                        );
+                        height = max(height, gutterline.metrics.height);
+                        self.gutter.push_back(gutterline);
+                    }
 
-                    lines_height += max(fmtline.metrics.height, gutterline.metrics.height);
                     linum += 1;
                     view.start_line += 1;
+                    lines_height += height;
                     diff -= 1;
-                    self.lines.push_back(fmtline);
-                    self.gutter.push_back(gutterline);
 
                     if diff == 0 {
                         break;
@@ -893,13 +976,18 @@ impl TextView {
         if num_lines != 0 && cursor_linum == view.start_line + num_lines - 1 {
             // If cursor is at last line
             loop {
-                let height = max(self.lines[0].metrics.height, self.gutter[0].metrics.height);
+                let mut height = self.lines[0].metrics.height;
+                if self.line_numbers {
+                    height = max(height, self.gutter[0].metrics.height);
+                }
                 if lines_height - height < self.rect.size.height + self.ybase {
                     break;
                 }
                 lines_height -= height;
                 self.lines.pop_front();
-                self.gutter.pop_front();
+                if self.line_numbers {
+                    self.gutter.pop_front();
+                }
             }
             if lines_height <= self.rect.size.height {
                 self.ybase = 0;
@@ -916,14 +1004,7 @@ impl TextView {
         let line = &self.lines[cursor_linum - view.start_line];
         let mut grapheme = 0;
         let mut cursor_x = 0;
-        let size = if self.line_numbers {
-            size2(
-                self.rect.size.width - self.gutter_width,
-                self.rect.size.height,
-            )
-        } else {
-            self.rect.size
-        };
+        let width = self.rect.size.width - self.gutter_width;
         for span in &line.spans {
             for cluster in span.clusters() {
                 if grapheme > gidx || grapheme + cluster.num_graphemes <= gidx {
@@ -953,8 +1034,8 @@ impl TextView {
                 };
                 if cursor_x < self.xbase {
                     self.xbase = cursor_x;
-                } else if cursor_x + cursor_width > self.xbase + size.width {
-                    self.xbase = cursor_x + cursor_width - size.width;
+                } else if cursor_x + cursor_width > self.xbase + width {
+                    self.xbase = cursor_x + cursor_width - width;
                 }
                 return;
             }

@@ -36,7 +36,16 @@ static FUZZY_LABEL_COLOR: Color = Color::new(96, 96, 96, 255);
 static FUZZY_SELECT_COLOR: Color = Color::new(255, 100, 0, 255);
 static FUZZY_TEXT_SIZE: f32 = 8.0;
 
-static COMMANDS: [&'static str; 6] = ["quit", "write", "edit", "cd", "buffer_prev", "buffer_next"];
+static COMMANDS: [&'static str; 8] = [
+    "quit",
+    "write",
+    "edit",
+    "cd",
+    "buffer_prev",
+    "buffer_next",
+    "number",
+    "relative_number",
+];
 
 #[cfg(target_os = "linux")]
 const FIXED_FONT: &'static str = "monospace";
@@ -354,6 +363,11 @@ impl Window {
                         self.fuzzy_popup.update_from_async();
                     }
                     "write" => {
+                        self.input_state.mode = InputMode::Normal;
+                        self.fuzzy_popup.set_active(false);
+                    }
+                    "number" => {
+                        self.textview.toggle_line_numbers();
                         self.input_state.mode = InputMode::Normal;
                         self.fuzzy_popup.set_active(false);
                     }
