@@ -916,6 +916,14 @@ impl TextView {
         let line = &self.lines[cursor_linum - view.start_line];
         let mut grapheme = 0;
         let mut cursor_x = 0;
+        let size = if self.line_numbers {
+            size2(
+                self.rect.size.width - self.gutter_width,
+                self.rect.size.height,
+            )
+        } else {
+            self.rect.size
+        };
         for span in &line.spans {
             for cluster in span.clusters() {
                 if grapheme > gidx || grapheme + cluster.num_graphemes <= gidx {
@@ -945,8 +953,8 @@ impl TextView {
                 };
                 if cursor_x < self.xbase {
                     self.xbase = cursor_x;
-                } else if cursor_x + cursor_width > self.xbase + self.rect.size.width {
-                    self.xbase = cursor_x + cursor_width - self.rect.size.width;
+                } else if cursor_x + cursor_width > self.xbase + size.width {
+                    self.xbase = cursor_x + cursor_width - size.width;
                 }
                 return;
             }
