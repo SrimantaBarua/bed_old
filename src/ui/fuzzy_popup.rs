@@ -319,6 +319,16 @@ impl FuzzyPopup {
         self.to_refresh = true;
     }
 
+    pub(super) fn tab_key(&mut self) {
+        self.interacted = true;
+        if self.filtered.len() > 0 {
+            self.user_input = self.filtered[self.select_idx].1.clone();
+            self.cursor_bidx = self.user_input.len();
+            self.cursor_gidx = bidx_to_gidx(&self.user_input, self.cursor_bidx);
+        }
+        self.to_refresh = true;
+    }
+
     pub(super) fn resize(&mut self, window_size: Size2D<u32, PixelSize>) {
         self.window_size = window_size;
         self.refresh();

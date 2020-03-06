@@ -773,6 +773,11 @@ impl Window {
                 | WindowEvent::Key(Key::Down, _, Action::Repeat, _) => {
                     self.fuzzy_popup.down_key();
                 }
+                WindowEvent::Key(Key::Tab, _, Action::Press, _)
+                | WindowEvent::Key(Key::Tab, _, Action::Repeat, _) => {
+                    self.fuzzy_popup.tab_key();
+                    self.fuzzy_popup.re_filter();
+                }
                 WindowEvent::Key(Key::Backspace, _, Action::Press, _)
                 | WindowEvent::Key(Key::Backspace, _, Action::Repeat, _) => {
                     self.fuzzy_popup.delete_left();
