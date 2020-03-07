@@ -115,13 +115,11 @@ impl<'a, 'b> Iterator for ShapedTextSpanIter<'a, 'b> {
         let (buf, face) = self.font_core.get(face_key, self.span.style).unwrap();
         buf.clear_contents();
         buf.add(c, 0);
-        let mut cluster = 1;
         let face_metrics = face.raster.get_metrics(self.span.size, self.dpi);
 
         while let Some((i, c)) = cidxs.peek() {
             if face.raster.has_glyph_for_char(*c) {
-                buf.add(*c, cluster);
-                cluster += 1;
+                buf.add(*c, *i as u32);
                 cidxs.next();
                 continue;
             }
@@ -133,9 +131,8 @@ impl<'a, 'b> Iterator for ShapedTextSpanIter<'a, 'b> {
             let cursor_positions = data[..*i]
                 .graphemes(true)
                 .map(|g| {
-                    let num_chars = g.chars().count();
                     let ret = last_cursor_position;
-                    last_cursor_position += num_chars;
+                    last_cursor_position += g.len();
                     ret
                 })
                 .collect();
@@ -162,9 +159,8 @@ impl<'a, 'b> Iterator for ShapedTextSpanIter<'a, 'b> {
         let cursor_positions = data
             .graphemes(true)
             .map(|g| {
-                let num_chars = g.chars().count();
                 let ret = last_cursor_position;
-                last_cursor_position += num_chars;
+                last_cursor_position += g.len();
                 ret
             })
             .collect();

@@ -244,7 +244,7 @@ impl Window {
             to_refresh = true;
             match event {
                 WindowEvent::FramebufferSize(w, h) => self.resize(size2(w as u32, h as u32)),
-                WindowEvent::MouseButton(glfw::MouseButtonLeft, Action::Press, m) => {
+                WindowEvent::MouseButton(glfw::MouseButtonLeft, Action::Press, _) => {
                     let (x, y) = self.window.get_cursor_pos();
                     self.textview.move_cursor_to_point((x as i32, y as i32));
                 }
