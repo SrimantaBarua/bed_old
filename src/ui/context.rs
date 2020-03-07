@@ -15,7 +15,7 @@ pub(super) struct RenderCtx {
     gl: Gl,
     projection_matrix: Mat4,
     size: Size2D<u32, PixelSize>,
-    dpi: Size2D<u32, DPI>,
+    pub(super) dpi: Size2D<u32, DPI>,
     clear_color: Color,
     glyph_renderer: GlyphRenderer,
     // Framebuffers

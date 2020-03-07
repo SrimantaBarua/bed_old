@@ -1,7 +1,7 @@
 // (C) 2020 Srimanta Barua <srimanta.barua1@gmail.com>
 
 use std::cell::RefCell;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::sync::mpsc::channel;
 use std::sync::mpsc::Receiver;
@@ -25,7 +25,6 @@ use super::textview::TextView;
 
 static GUTTER_PADDING: u32 = 10;
 static GUTTER_TEXTSIZE: f32 = 7.0;
-static GUTTER_FG_COLOR: Color = Color::new(196, 196, 196, 255);
 static GUTTER_BG_COLOR: Color = Color::new(255, 255, 255, 255);
 static TEXTVIEW_BG_COLOR: Color = Color::new(255, 255, 255, 255);
 static CLEAR_COLOR: Color = Color::new(255, 255, 255, 255);
@@ -46,16 +45,6 @@ static COMMANDS: [&'static str; 8] = [
     "number",
     "relative_number",
 ];
-
-#[cfg(target_os = "linux")]
-const FIXED_FONT: &'static str = "monospace";
-#[cfg(target_os = "windows")]
-const FIXED_FONT: &'static str = "Consolas";
-
-#[cfg(target_os = "linux")]
-const VARIABLE_FONT: &'static str = "sans";
-#[cfg(target_os = "windows")]
-const VARIABLE_FONT: &'static str = "Arial";
 
 // Because windows messes things up, we have to get viewable region
 #[cfg(not(target_os = "windows"))]
@@ -94,12 +83,14 @@ impl Window {
         glfw: Rc<RefCell<Glfw>>,
         core: Rc<RefCell<Core>>,
         font_core: Rc<RefCell<FontCore>>,
-        first_buffer: Rc<RefCell<Buffer>>,
+        fixed_face: FaceKey,
+        variable_face: FaceKey,
+        first_buffer_path: Option<&str>,
         width: u32,
         height: u32,
         title: &str,
     ) -> (Window, Receiver<(f64, WindowEvent)>) {
-        let (window, events, dpi) = {
+        let (mut window, events, dpi) = {
             let glfw = &mut *glfw.borrow_mut();
             // Create GLFW window and calculate DPI
             let (mut window, events, dpi) = glfw.with_primary_monitor(|glfw, m| {
@@ -132,19 +123,35 @@ impl Window {
             // Return stuff
             (window, events, dpi)
         };
-        // Initialie fonts
-        let (fixed_face, variable_face) = {
-            let fc = &mut *font_core.borrow_mut();
-            let fixed_face = fc.find(FIXED_FONT).expect("failed to get monospace font");
-            let variable_face = fc.find(VARIABLE_FONT).expect("failed to get sans font");
-            (fixed_face, variable_face)
+        // Open first buffer
+        let buffer = {
+            let core = &mut *core.borrow_mut();
+            match first_buffer_path {
+                Some(spath) => {
+                    let path = Path::new(spath);
+                    if path.is_absolute() {
+                        core.new_buffer_from_file(spath, dpi)
+                            .expect("failed to open file")
+                    } else {
+                        let mut working_directory =
+                            std::env::current_dir().expect("failed to get current directory");
+                        working_directory.push(path);
+                        let spath = working_directory
+                            .to_str()
+                            .expect("failed to convert path to string");
+                        core.new_buffer_from_file(spath, dpi)
+                            .expect("failed to open file")
+                    }
+                }
+                None => core.new_empty_buffer(dpi),
+            }
         };
         // Request view ID from core
         let view_id = (&mut *core.borrow_mut()).next_view_id();
         // Initialize text view tree
         let inner_rect = get_viewable_rect(&window);
         let textview = TextView::new(
-            first_buffer,
+            buffer,
             inner_rect,
             TEXTVIEW_BG_COLOR,
             fixed_face,
@@ -155,7 +162,6 @@ impl Window {
             false,
             GUTTER_PADDING,
             TextSize::from_f32(GUTTER_TEXTSIZE),
-            GUTTER_FG_COLOR,
             GUTTER_BG_COLOR,
             CURSOR_COLOR,
             view_id,
@@ -178,6 +184,8 @@ impl Window {
             font_core.clone(),
             dpi,
         );
+        // Make window visible
+        window.show();
         // Return window wrapper
         (
             Window {
@@ -316,7 +324,8 @@ impl Window {
                         let core = &mut *self.core.borrow_mut();
                         let mut path = self.working_directory.clone();
                         path.push(&selection);
-                        match core.new_buffer_from_file(path.to_str().unwrap()) {
+                        match core.new_buffer_from_file(path.to_str().unwrap(), self.render_ctx.dpi)
+                        {
                             Ok(buffer) => {
                                 let view_id = core.next_view_id();
                                 self.textview.add_buffer(buffer, view_id);

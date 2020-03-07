@@ -25,7 +25,7 @@ pub(in crate::ui) use self::freetype::RasterFace;
 use self::harfbuzz::{HbBuffer, HbFont};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
-pub(in crate::ui) struct FaceKey(u16);
+pub(crate) struct FaceKey(u16);
 
 impl FaceKey {
     pub(in crate::ui) fn ival(self) -> u16 {
@@ -84,7 +84,7 @@ impl FaceGroup {
     }
 }
 
-pub(in crate::ui) struct FontCore {
+pub(crate) struct FontCore {
     path_face_map: HashMap<(CString, u32), FaceKey>,
     key_face_map: HashMap<FaceKey, FaceGroup>,
     next_key: u16,

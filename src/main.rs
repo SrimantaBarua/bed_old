@@ -1,7 +1,6 @@
 // (C) 2020 Srimanta Barua <srimanta.barua1@gmail.com>
 
-use std::path::Path;
-use std::{thread, time};
+use std::time;
 
 mod core;
 mod textbuffer;
@@ -15,28 +14,7 @@ const TITLE: &str = "bed";
 fn main() {
     let args = parse_args();
 
-    let mut core = core::Core::new();
-    let buffer = match args.value_of("FILE") {
-        Some(spath) => {
-            let path = Path::new(spath);
-            if path.is_absolute() {
-                core.new_buffer_from_file(spath)
-                    .expect("failed to open file")
-            } else {
-                let mut working_directory =
-                    std::env::current_dir().expect("failed to get current directory");
-                working_directory.push(path);
-                let spath = working_directory
-                    .to_str()
-                    .expect("failed to convert path to string");
-                core.new_buffer_from_file(spath)
-                    .expect("failed to open file")
-            }
-        }
-        None => core.new_empty_buffer(),
-    };
-
-    let (mut ui_core, window, events) = ui::UICore::init(core, buffer, WIDTH, HEIGHT, TITLE);
+    let (mut ui_core, window, events) = ui::UICore::init(args, WIDTH, HEIGHT, TITLE);
     let mut windows = vec![(window, events, time::Instant::now())];
 
     let target_duration = time::Duration::from_nanos(1_000_000_000 / 60).as_secs_f64();
@@ -57,7 +35,7 @@ fn main() {
     }
 }
 
-fn parse_args<'a>() -> clap::ArgMatches<'a> {
+fn parse_args() -> clap::ArgMatches<'static> {
     use clap::{App, Arg};
     App::new("bed")
         .version("0.0.1")

@@ -270,13 +270,13 @@ pub(super) struct ShapedTextLineMetrics {
 }
 
 #[derive(Debug, Default)]
-pub(super) struct ShapedTextLine {
+pub(crate) struct ShapedTextLine {
     pub(super) metrics: ShapedTextLineMetrics,
     pub(super) spans: Vec<ShapedTextSpan>,
 }
 
 impl ShapedTextLine {
-    pub(super) fn from_textline(
+    pub(crate) fn from_textline(
         line: TextLine,
         fixed_face: FaceKey,
         variable_face: FaceKey,
@@ -314,7 +314,7 @@ impl ShapedTextLine {
         }
     }
 
-    pub(super) fn from_textstr(
+    pub(crate) fn from_textstr(
         span: TextSpan,
         fixed_face: FaceKey,
         variable_face: FaceKey,

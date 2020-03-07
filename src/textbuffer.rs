@@ -2,20 +2,21 @@
 
 use std::cell::RefCell;
 use std::collections::HashMap;
+use std::fmt::Write as FmtWrite;
 use std::fs::File;
 use std::io::Result as IOResult;
 use std::rc::{Rc, Weak};
 
-use ropey::{
-    iter::{Chunks, Lines},
-    str_utils::byte_to_char_idx,
-    Rope, RopeSlice,
-};
+use euclid::Size2D;
+use ropey::{iter::Chunks, str_utils::byte_to_char_idx, Rope, RopeSlice};
 use unicode_segmentation::{GraphemeCursor, GraphemeIncomplete};
 
-use crate::types::{Color, TextPitch, TextSize, TextSlant, TextStyle, TextWeight};
-use crate::ui::text::{TextLine, TextSpan};
+use crate::types::{Color, TextPitch, TextSize, TextSlant, TextStyle, TextWeight, DPI};
+use crate::ui::font::{FaceKey, FontCore};
+use crate::ui::text::{ShapedTextLine, TextLine, TextSpan};
 
+static GUTTER_FG_COLOR: Color = Color::new(196, 196, 196, 255);
+static GUTTER_TEXT_SIZE: f32 = 7.0;
 static TEXT_FG_COLOR: Color = Color::new(96, 96, 96, 255);
 static TEXT_SIZE: f32 = 8.0;
 
@@ -132,37 +133,71 @@ impl BufferPos {
 
 // Actual text storage
 pub(crate) struct Buffer {
+    fmtbuf: String,
     data: Rope,
     tabsize: usize,
     path: Option<String>,
     cursors: HashMap<usize, Weak<RefCell<BufferCursorInner>>>,
+    fixed_face: FaceKey,
+    variable_face: FaceKey,
+    font_core: Rc<RefCell<FontCore>>,
+    dpi_shaped_lines: Vec<(Size2D<u32, DPI>, Vec<ShapedTextLine>, Vec<ShapedTextLine>)>,
 }
 
 impl Buffer {
     /// Create empty text buffer
-    pub(crate) fn empty(tabsize: usize) -> Buffer {
-        Buffer {
+    pub(crate) fn empty(
+        tabsize: usize,
+        initial_dpi: Size2D<u32, DPI>,
+        fixed_face: FaceKey,
+        variable_face: FaceKey,
+        font_core: Rc<RefCell<FontCore>>,
+    ) -> Buffer {
+        let mut ret = Buffer {
+            fmtbuf: String::new(),
             data: Rope::new(),
             cursors: HashMap::new(),
             path: None,
             tabsize: tabsize,
-        }
+            dpi_shaped_lines: vec![(initial_dpi, Vec::new(), Vec::new())],
+            fixed_face: fixed_face,
+            variable_face: variable_face,
+            font_core: font_core,
+        };
+        ret.format_lines_from(0);
+        ret
     }
 
     /// Create buffer from file
-    pub(crate) fn from_file(path: &str, tabsize: usize) -> IOResult<Buffer> {
+    pub(crate) fn from_file(
+        path: &str,
+        tabsize: usize,
+        initial_dpi: Size2D<u32, DPI>,
+        fixed_face: FaceKey,
+        variable_face: FaceKey,
+        font_core: Rc<RefCell<FontCore>>,
+    ) -> IOResult<Buffer> {
         File::open(path)
             .and_then(|f| Rope::from_reader(f))
-            .map(|r| Buffer {
-                data: r,
-                cursors: HashMap::new(),
-                path: Some(path.to_owned()),
-                tabsize: tabsize,
+            .map(|r| {
+                let mut ret = Buffer {
+                    fmtbuf: String::new(),
+                    data: r,
+                    cursors: HashMap::new(),
+                    path: Some(path.to_owned()),
+                    tabsize: tabsize,
+                    dpi_shaped_lines: vec![(initial_dpi, Vec::new(), Vec::new())],
+                    fixed_face: fixed_face,
+                    variable_face: variable_face,
+                    font_core: font_core,
+                };
+                ret.format_lines_from(0);
+                ret
             })
     }
 
     /// Reload buffer contents and reset all cursors
-    pub(crate) fn reload_from_file(&mut self) -> IOResult<()> {
+    pub(crate) fn reload_from_file(&mut self, dpi: Size2D<u32, DPI>) -> IOResult<()> {
         if let Some(path) = &self.path {
             File::open(path)
                 .and_then(|f| Rope::from_reader(f))
@@ -178,6 +213,15 @@ impl Buffer {
                             inner.sync_from_and_udpate_char_idx_left(&self.data, self.tabsize);
                         }
                     }
+                    if self
+                        .dpi_shaped_lines
+                        .iter()
+                        .position(|(x, _, _)| *x == dpi)
+                        .is_none()
+                    {
+                        self.dpi_shaped_lines.push((dpi, Vec::new(), Vec::new()));
+                    }
+                    self.format_lines_from(0);
                 })
         } else {
             unreachable!()
@@ -188,11 +232,29 @@ impl Buffer {
     pub(crate) fn set_tabsize(&mut self, tabsize: usize) {
         self.tabsize = tabsize;
         // TODO: Update all cursors
+        // TODO: Re-format lines
     }
 
     /// Number of lines in buffer
     pub(crate) fn len_lines(&self) -> usize {
         self.data.len_lines()
+    }
+
+    /// Reference to shaped line numbers and line text given DPI
+    pub(crate) fn shaped_data(
+        &self,
+        dpi: Size2D<u32, DPI>,
+    ) -> Option<(&[ShapedTextLine], &[ShapedTextLine])> {
+        self.dpi_shaped_lines
+            .iter()
+            .filter_map(|(x, l, t)| {
+                if *x == dpi {
+                    Some((l.as_ref(), t.as_ref()))
+                } else {
+                    None
+                }
+            })
+            .next()
     }
 
     /// Get position indicator at start of line number
@@ -214,14 +276,6 @@ impl Buffer {
                 line_cidx: 0,
                 line_gidx: 0,
             }
-        }
-    }
-
-    /// Get formatted lines from point
-    pub(crate) fn fmt_lines_from_pos<'a>(&'a self, pos: &BufferPos) -> BufferFmtLineIter<'a> {
-        BufferFmtLineIter {
-            lines: self.data.lines_at(pos.line_num),
-            tabsize: self.tabsize,
         }
     }
 
@@ -290,6 +344,9 @@ impl Buffer {
             }
             inner.sync_from_and_udpate_char_idx_left(&self.data, self.tabsize);
         }
+
+        // Re-format lines
+        self.format_lines_from(self.data.char_to_line(start_cidx));
     }
 
     /// Delete to the right of cursor
@@ -326,6 +383,9 @@ impl Buffer {
             }
             inner.sync_from_and_udpate_char_idx_left(&self.data, self.tabsize);
         }
+
+        // Re-format lines
+        self.format_lines_from(self.data.char_to_line(start_cidx));
     }
 
     /// Delete to start of line
@@ -370,6 +430,9 @@ impl Buffer {
                 inner.char_idx -= diff;
             }
         }
+
+        // Re-format lines
+        self.format_lines_from(cursor.line_num);
     }
 
     /// Delete to the end of line
@@ -400,6 +463,9 @@ impl Buffer {
                 inner.char_idx -= diff;
             }
         }
+
+        // Re-format lines
+        self.format_lines_from(linum);
     }
 
     pub(crate) fn delete_lines(&mut self, cursor: &mut BufferCursor, nlines: usize) {
@@ -440,6 +506,9 @@ impl Buffer {
             inner.line_gidx = 0;
             inner.line_global_x = 0;
         }
+
+        // Re-format lines
+        self.format_lines_from(linum);
     }
 
     pub(crate) fn delete_lines_up(&mut self, cursor: &mut BufferCursor, mut nlines: usize) {
@@ -499,6 +568,9 @@ impl Buffer {
             inner.char_idx += 1;
             inner.sync_from_and_udpate_char_idx_right(&self.data, self.tabsize);
         }
+
+        // Re-format lines
+        self.format_lines_from(self.data.char_to_line(old_char_idx));
     }
 
     /// Insert string at given cursor position
@@ -528,6 +600,9 @@ impl Buffer {
             inner.char_idx += ccount;
             inner.sync_from_and_udpate_char_idx_right(&self.data, self.tabsize);
         }
+
+        // Re-format lines
+        self.format_lines_from(self.data.char_to_line(old_char_idx));
     }
 
     /// Move cursor to given line number and gidx
@@ -653,6 +728,54 @@ impl Buffer {
     fn clean_cursors(&mut self) {
         self.cursors.retain(|_, weak| weak.strong_count() > 0);
     }
+
+    fn format_lines_from(&mut self, start: usize) {
+        let font_core = &mut *self.font_core.borrow_mut();
+        for (dpi, lvec, tvec) in &mut self.dpi_shaped_lines {
+            tvec.truncate(start);
+            for i in tvec.len()..self.data.len_lines() {
+                let line = self.data.line(i);
+                expand_line(line, self.tabsize, &mut self.fmtbuf);
+                let fmtline = TextLine(vec![TextSpan::new(
+                    &self.fmtbuf,
+                    TextSize::from_f32(TEXT_SIZE),
+                    TextStyle::new(TextWeight::Medium, TextSlant::Roman),
+                    TEXT_FG_COLOR,
+                    TextPitch::Fixed,
+                    None,
+                )]);
+                let shaped_line = ShapedTextLine::from_textline(
+                    fmtline,
+                    self.fixed_face,
+                    self.variable_face,
+                    font_core,
+                    *dpi,
+                );
+                tvec.push(shaped_line);
+            }
+            for linum in lvec.len()..(tvec.len() + 1) {
+                self.fmtbuf.clear();
+                write!(&mut self.fmtbuf, "{}", linum).unwrap();
+                let fmtspan = TextSpan::new(
+                    &self.fmtbuf,
+                    TextSize::from_f32(GUTTER_TEXT_SIZE),
+                    TextStyle::new(TextWeight::Medium, TextSlant::Roman),
+                    GUTTER_FG_COLOR,
+                    TextPitch::Fixed,
+                    None,
+                );
+                let shaped_line = ShapedTextLine::from_textstr(
+                    fmtspan,
+                    self.fixed_face,
+                    self.variable_face,
+                    font_core,
+                    *dpi,
+                );
+                lvec.push(shaped_line);
+            }
+            lvec.truncate(tvec.len() + 1);
+        }
+    }
 }
 
 // From https://github.com/cessen/ropey/blob/master/examples/graphemes_step.rs
@@ -738,41 +861,6 @@ fn is_grapheme_boundary(slice: &RopeSlice, char_idx: usize) -> bool {
     }
 }
 
-pub(crate) struct BufferFmtLineIter<'a> {
-    lines: Lines<'a>,
-    tabsize: usize,
-}
-
-impl<'a> BufferFmtLineIter<'a> {
-    pub(crate) fn prev<'b>(&mut self, buf: &'b mut String) -> Option<TextLine<'b>> {
-        self.lines.prev().map(move |l| {
-            expand_line(l, self.tabsize, buf);
-            TextLine(vec![TextSpan::new(
-                buf,
-                TextSize::from_f32(TEXT_SIZE),
-                TextStyle::new(TextWeight::Medium, TextSlant::Roman),
-                TEXT_FG_COLOR,
-                TextPitch::Fixed,
-                None,
-            )])
-        })
-    }
-
-    pub(crate) fn next<'b>(&mut self, buf: &'b mut String) -> Option<TextLine<'b>> {
-        self.lines.next().map(move |l| {
-            expand_line(l, self.tabsize, buf);
-            TextLine(vec![TextSpan::new(
-                buf,
-                TextSize::from_f32(TEXT_SIZE),
-                TextStyle::new(TextWeight::Medium, TextSlant::Roman),
-                TEXT_FG_COLOR,
-                TextPitch::Fixed,
-                None,
-            )])
-        })
-    }
-}
-
 fn expand_line(slice: RopeSlice, tabsize: usize, buf: &mut String) {
     buf.clear();
     let slice = trim_newlines(slice);
@@ -811,7 +899,7 @@ fn trim_newlines(slice: RopeSlice) -> RopeSlice {
 }
 
 // From https://github.com/cessen/ropey/blob/master/examples/graphemes_iter.rs
-pub(crate) struct RopeGraphemes<'a> {
+struct RopeGraphemes<'a> {
     text: RopeSlice<'a>,
     chunks: Chunks<'a>,
     cur_chunk: &'a str,
@@ -820,7 +908,7 @@ pub(crate) struct RopeGraphemes<'a> {
 }
 
 impl<'a> RopeGraphemes<'a> {
-    pub(crate) fn new<'b>(slice: &RopeSlice<'b>) -> RopeGraphemes<'b> {
+    fn new<'b>(slice: &RopeSlice<'b>) -> RopeGraphemes<'b> {
         let mut chunks = slice.chunks();
         let first_chunk = chunks.next().unwrap_or("");
         RopeGraphemes {
