@@ -3,7 +3,7 @@
 use std::ffi::CStr;
 use std::ops::Drop;
 
-use euclid::{point2, size2, Point2D, Rect, Size2D};
+use euclid::{point2, Point2D, Rect, Size2D};
 
 use super::font::{FaceKey, RasterFace};
 use super::glyphrender::{ActiveGlyphRenderer, GlyphRenderer};
@@ -14,7 +14,7 @@ use crate::types::{Color, PixelSize, TextSize, TextStyle, DPI};
 pub(super) struct RenderCtx {
     gl: Gl,
     projection_matrix: Mat4,
-    rect: Rect<u32, PixelSize>,
+    size: Size2D<u32, PixelSize>,
     dpi: Size2D<u32, DPI>,
     clear_color: Color,
     glyph_renderer: GlyphRenderer,
@@ -32,7 +32,7 @@ pub(super) struct RenderCtx {
 
 impl RenderCtx {
     pub(super) fn new(
-        rect: Rect<u32, PixelSize>,
+        size: Size2D<u32, PixelSize>,
         dpi: Size2D<u32, DPI>,
         clear_color: Color,
     ) -> RenderCtx {
@@ -50,8 +50,8 @@ impl RenderCtx {
             ShaderProgram::new(shadow_vsrc, shadow_fsrc).expect("failed to compile shader");
         RenderCtx {
             gl: Gl,
-            projection_matrix: Mat4::projection(rect.size.cast()),
-            rect: rect,
+            projection_matrix: Mat4::projection(size.cast()),
+            size: size,
             dpi: dpi,
             clear_color: clear_color,
             glyph_renderer: GlyphRenderer::new(dpi),
@@ -61,17 +61,17 @@ impl RenderCtx {
             clr_quad_arr: ElemArr::new(64),
             tex_clr_quad_arr: ElemArr::new(4096),
             tex_quad_arr: ElemArr::new(8),
-            framebuffers: [Framebuffer::new(TexUnit::Texture1, rect.size)],
+            framebuffers: [Framebuffer::new(TexUnit::Texture1, size)],
         }
     }
 
     pub(super) fn activate(&mut self, window: &mut glfw::Window) -> ActiveRenderCtx {
         let mut active_gl = self.gl.activate(window);
-        active_gl.viewport(self.rect.cast());
+        active_gl.viewport(Rect::new(point2(0, 0), self.size.cast()));
         self.framebuffers[0].bind_texture();
         let mut ret = ActiveRenderCtx {
             active_gl: active_gl,
-            rect: self.rect,
+            size: self.size,
             projection_matrix: &self.projection_matrix,
             dpi: self.dpi,
             clear_color: self.clear_color,
@@ -87,16 +87,16 @@ impl RenderCtx {
         ret
     }
 
-    pub(super) fn set_rect(&mut self, rect: Rect<u32, PixelSize>) {
-        self.rect = rect;
-        self.projection_matrix = Mat4::projection(rect.size);
-        self.framebuffers[0].resize(rect.size);
+    pub(super) fn set_size(&mut self, size: Size2D<u32, PixelSize>) {
+        self.size = size;
+        self.projection_matrix = Mat4::projection(size);
+        self.framebuffers[0].resize(size);
     }
 }
 
 pub(super) struct ActiveRenderCtx<'a> {
     active_gl: ActiveGl<'a>,
-    rect: Rect<u32, PixelSize>,
+    size: Size2D<u32, PixelSize>,
     projection_matrix: &'a Mat4,
     clear_color: Color,
     dpi: Size2D<u32, DPI>,

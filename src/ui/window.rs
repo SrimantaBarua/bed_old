@@ -57,19 +57,19 @@ const VARIABLE_FONT: &'static str = "sans";
 #[cfg(target_os = "windows")]
 const VARIABLE_FONT: &'static str = "Arial";
 
-// Because windows messes things up, we have to get framebuffer rect ourselves
+// Because windows messes things up, we have to get viewable region
 #[cfg(not(target_os = "windows"))]
-fn get_framebuffer_rect(window: &glfw::Window) -> Rect<u32, PixelSize> {
+fn get_viewable_rect(window: &glfw::Window) -> Rect<u32, PixelSize> {
     let (w, h) = window.get_framebuffer_size();
     Rect::new(point2(0, 0), size2(w, h)).cast()
 }
 
 #[cfg(target_os = "windows")]
-fn get_framebuffer_rect(window: &glfw::Window) -> Rect<u32, PixelSize> {
+fn get_viewable_rect(window: &glfw::Window) -> Rect<u32, PixelSize> {
     let (w, h) = window.get_framebuffer_size();
     let rect = Rect::new(point2(0, 0), size2(w, h));
     let (l, t, r, b) = window.get_frame_size();
-    let off = SideOffsets2D::new(b, r, t, l);
+    let off = SideOffsets2D::new(t, r, b, l);
     rect.inner_rect(off).cast()
 }
 
@@ -142,11 +142,10 @@ impl Window {
         // Request view ID from core
         let view_id = (&mut *core.borrow_mut()).next_view_id();
         // Initialize text view tree
-        let framebuffer_rect = get_framebuffer_rect(&window);
-        let textview_rect = Rect::new(point2(0, 0), framebuffer_rect.size);
+        let inner_rect = get_viewable_rect(&window);
         let textview = TextView::new(
             first_buffer,
-            textview_rect,
+            inner_rect,
             TEXTVIEW_BG_COLOR,
             fixed_face,
             variable_face,
@@ -163,7 +162,7 @@ impl Window {
         );
         // Initialize fuzzy search popup
         let fuzzy_popup = FuzzyPopup::new(
-            framebuffer_rect.size,
+            inner_rect,
             40,
             80,
             10,
@@ -183,7 +182,7 @@ impl Window {
         (
             Window {
                 window: window,
-                render_ctx: RenderCtx::new(framebuffer_rect, dpi, CLEAR_COLOR),
+                render_ctx: RenderCtx::new(size2(width, height), dpi, CLEAR_COLOR),
                 glfw: glfw,
                 core: core,
                 fixed_face: fixed_face,
@@ -209,7 +208,7 @@ impl Window {
         let mut to_refresh = false;
 
         let (m, g, coeff, mut a) = (0.5, 9.8, 0.3, (0.0, 0.0));
-        let time = (duration.subsec_millis() as f64) / 10.0;
+        let time = duration.as_secs_f64() * 100.0;
 
         // Apply friction
         let friction_a = g * coeff;
@@ -251,12 +250,15 @@ impl Window {
                 }
                 WindowEvent::Scroll(x, y) => {
                     // Scroll acceleration accumulation
-                    a.0 -= x / m;
-                    a.1 -= y / m;
+                    a.0 -= x;
+                    a.1 -= y;
                 }
                 e => self.handle_event(e),
             }
         }
+
+        a.0 = (a.0 / m).round();
+        a.1 = (a.1 / m).round();
 
         // Apply accelation
         self.textview_scroll_v.0 += time * a.0;
@@ -400,12 +402,11 @@ impl Window {
         }
     }
 
-    fn resize(&mut self, _size: Size2D<u32, PixelSize>) {
-        let fb_rect = get_framebuffer_rect(&self.window);
-        self.render_ctx.set_rect(fb_rect);
-        self.textview
-            .set_rect(Rect::new(point2(0, 0), fb_rect.size));
-        self.fuzzy_popup.resize(fb_rect.size);
+    fn resize(&mut self, size: Size2D<u32, PixelSize>) {
+        let vrect = get_viewable_rect(&self.window);
+        self.render_ctx.set_size(size);
+        self.textview.set_rect(vrect);
+        self.fuzzy_popup.set_window_rect(vrect);
     }
 
     fn handle_event(&mut self, event: WindowEvent) {

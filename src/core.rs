@@ -27,7 +27,6 @@ impl Core {
     }
 
     pub(crate) fn new_buffer_from_file(&mut self, path: &str) -> IOResult<Rc<RefCell<Buffer>>> {
-        println!("path: {}", path);
         if let Some(buffer) = self.buffers.get_mut(path) {
             {
                 let buffer = &mut *buffer.borrow_mut();

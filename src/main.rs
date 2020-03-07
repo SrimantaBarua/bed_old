@@ -39,12 +39,10 @@ fn main() {
     let (mut ui_core, window, events) = ui::UICore::init(core, buffer, WIDTH, HEIGHT, TITLE);
     let mut windows = vec![(window, events, time::Instant::now())];
 
-    let target_duration = time::Duration::from_nanos(1_000_000_000 / 60);
+    let target_duration = time::Duration::from_nanos(1_000_000_000 / 60).as_secs_f64();
 
     while windows.len() > 0 {
-        let start = time::Instant::now();
-
-        ui_core.poll_events();
+        ui_core.wait_events(target_duration);
         windows.retain(|(window, _, _)| !window.should_close());
 
         for i in 0..windows.len() {
@@ -55,12 +53,6 @@ fn main() {
                 window.refresh();
             }
             windows[i].2 = cur_time;
-        }
-
-        let end = time::Instant::now();
-        let diff = end - start;
-        if diff < target_duration {
-            thread::sleep(target_duration - diff);
         }
     }
 }

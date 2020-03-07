@@ -15,7 +15,7 @@ use super::font::{FaceKey, FontCore};
 use super::text::{ShapedTextLine, TextCursorStyle, TextSpan};
 
 pub(super) struct FuzzyPopup {
-    window_size: Size2D<u32, PixelSize>,
+    window_rect: Rect<u32, PixelSize>,
     max_height_percentage: u32,
     width_percentage: u32,
     height: u32,
@@ -50,7 +50,7 @@ pub(super) struct FuzzyPopup {
 
 impl FuzzyPopup {
     pub(super) fn new(
-        window_size: Size2D<u32, PixelSize>,
+        window_rect: Rect<u32, PixelSize>,
         max_height_percentage: u32,
         width_percentage: u32,
         edge_padding: u32,
@@ -67,7 +67,7 @@ impl FuzzyPopup {
         dpi: Size2D<u32, DPI>,
     ) -> FuzzyPopup {
         let mut ret = FuzzyPopup {
-            window_size: window_size,
+            window_rect: window_rect,
             max_height_percentage: max_height_percentage,
             width_percentage: width_percentage,
             edge_padding: edge_padding,
@@ -106,11 +106,13 @@ impl FuzzyPopup {
     pub(super) fn draw(&mut self, actx: &mut ActiveRenderCtx) {
         self.to_refresh = false;
 
-        let width = (self.window_size.width * self.width_percentage) / 100;
-        let lpad = (self.window_size.width - width) / 2;
+        let width = (self.window_rect.size.width * self.width_percentage) / 100;
+        let lpad = (self.window_rect.size.width - width) / 2;
         let origin = point2(
-            lpad,
-            self.window_size.height - self.height - self.bottom_off,
+            self.window_rect.origin.x + lpad,
+            self.window_rect.origin.y + self.window_rect.size.height
+                - self.height
+                - self.bottom_off,
         );
         let size = size2(width, self.height);
         let side_offsets = SideOffsets2D::new(
@@ -329,8 +331,8 @@ impl FuzzyPopup {
         self.to_refresh = true;
     }
 
-    pub(super) fn resize(&mut self, window_size: Size2D<u32, PixelSize>) {
-        self.window_size = window_size;
+    pub(super) fn set_window_rect(&mut self, window_rect: Rect<u32, PixelSize>) {
+        self.window_rect = window_rect;
         self.refresh();
         self.to_refresh = true;
     }
@@ -354,7 +356,7 @@ impl FuzzyPopup {
     }
 
     fn refresh(&mut self) {
-        let max_height = (self.max_height_percentage * self.window_size.height) / 100;
+        let max_height = (self.max_height_percentage * self.window_rect.size.height) / 100;
         self.lines.clear();
         let font_core = &mut *self.font_core.borrow_mut();
 

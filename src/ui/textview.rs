@@ -184,31 +184,33 @@ impl TextView {
         }
         let mut x = 0;
         let mut gidx = 0;
-        'outer: for span in &self.lines[linum].spans {
-            for cluster in span.clusters() {
-                let num_glyphs = cluster.glyph_infos.len();
-                if num_glyphs % cluster.num_graphemes != 0 {
-                    let startx = x;
-                    for gi in cluster.glyph_infos {
-                        x += gi.advance.width;
-                    }
-                    if x < point.0 {
-                        continue;
-                    }
-                    let width = x - startx;
-                    let grapheme_width = width / cluster.num_graphemes as i32;
-                    gidx += width / grapheme_width;
-                    break 'outer;
-                } else {
-                    let glyphs_per_grapheme = num_glyphs / cluster.num_graphemes;
-                    for i in (0..num_glyphs).step_by(glyphs_per_grapheme) {
-                        for gi in &cluster.glyph_infos[i..(i + glyphs_per_grapheme)] {
+        if linum < self.lines.len() {
+            'outer: for span in &self.lines[linum].spans {
+                for cluster in span.clusters() {
+                    let num_glyphs = cluster.glyph_infos.len();
+                    if num_glyphs % cluster.num_graphemes != 0 {
+                        let startx = x;
+                        for gi in cluster.glyph_infos {
                             x += gi.advance.width;
-                            if x >= point.0 {
-                                break 'outer;
-                            }
                         }
-                        gidx += 1;
+                        if x < point.0 {
+                            continue;
+                        }
+                        let width = x - startx;
+                        let grapheme_width = width / cluster.num_graphemes as i32;
+                        gidx += width / grapheme_width;
+                        break 'outer;
+                    } else {
+                        let glyphs_per_grapheme = num_glyphs / cluster.num_graphemes;
+                        for i in (0..num_glyphs).step_by(glyphs_per_grapheme) {
+                            for gi in &cluster.glyph_infos[i..(i + glyphs_per_grapheme)] {
+                                x += gi.advance.width;
+                                if x >= point.0 {
+                                    break 'outer;
+                                }
+                            }
+                            gidx += 1;
+                        }
                     }
                 }
             }
