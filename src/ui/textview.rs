@@ -838,6 +838,7 @@ impl<'a> Iterator for LinumTextIter<'a> {
             } else {
                 None
             };
+            //println!("line: {}: height: {}", self.i, height);
             self.i += 1;
             Some((ascender, descender, height, tline, lline))
         }

@@ -217,7 +217,7 @@ pub(in crate::ui) struct RasterizedGlyph<'a> {
     pub(in crate::ui) buffer: &'a [u8],
 }
 
-#[derive(Clone, Debug, Copy)]
+#[derive(Clone, Debug, Copy, Eq, PartialEq)]
 pub(in crate::ui) struct ScaledFaceMetrics {
     pub(in crate::ui) ascender: i32,
     pub(in crate::ui) descender: i32,

@@ -185,7 +185,7 @@ impl<'a, 'b> Iterator for ShapedTextSpanIter<'a, 'b> {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Eq, PartialEq)]
 pub(super) struct ShapedTextSpan {
     pub(super) face: FaceKey,
     pub(super) color: Color,
@@ -261,7 +261,7 @@ pub(super) struct ShapedCluster<'a> {
     pub(super) glyph_infos: &'a [harfbuzz::GlyphInfo],
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Eq, PartialEq)]
 pub(super) struct ShapedTextLineMetrics {
     pub(super) ascender: i32,
     pub(super) descender: i32,
@@ -269,7 +269,7 @@ pub(super) struct ShapedTextLineMetrics {
     pub(super) width: u32,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Eq, PartialEq)]
 pub(crate) struct ShapedTextLine {
     pub(super) metrics: ShapedTextLineMetrics,
     pub(super) spans: Vec<ShapedTextSpan>,

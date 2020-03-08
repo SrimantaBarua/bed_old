@@ -164,7 +164,7 @@ impl Buffer {
             variable_face: variable_face,
             font_core: font_core,
         };
-        ret.format_lines_from(0);
+        ret.format_lines_from(0, None);
         ret
     }
 
@@ -191,7 +191,7 @@ impl Buffer {
                     variable_face: variable_face,
                     font_core: font_core,
                 };
-                ret.format_lines_from(0);
+                ret.format_lines_from(0, None);
                 ret
             })
     }
@@ -213,15 +213,17 @@ impl Buffer {
                             inner.sync_from_and_udpate_char_idx_left(&self.data, self.tabsize);
                         }
                     }
-                    if self
-                        .dpi_shaped_lines
-                        .iter()
-                        .position(|(x, _, _)| *x == dpi)
-                        .is_none()
-                    {
+                    let mut found = false;
+                    for (d, _, t) in &mut self.dpi_shaped_lines {
+                        t.clear();
+                        if *d == dpi {
+                            found = true;
+                        }
+                    }
+                    if !found {
                         self.dpi_shaped_lines.push((dpi, Vec::new(), Vec::new()));
                     }
-                    self.format_lines_from(0);
+                    self.format_lines_from(0, None);
                 })
         } else {
             unreachable!()
@@ -313,7 +315,7 @@ impl Buffer {
 
     /// Delete to the left of cursor
     pub(crate) fn delete_left(&mut self, cursor: &mut BufferCursor, n: usize) {
-        // Delete contents
+        // Delete contents and re-format
         let (start_cidx, end_cidx, view_id) = {
             let cursor = &mut *cursor.inner.borrow_mut();
             if cursor.char_idx == 0 {
@@ -324,7 +326,23 @@ impl Buffer {
             } else {
                 cursor.char_idx - n
             };
+            // Calculate formatting replace range
+            let start_line = self.data.char_to_line(cidx);
+            let mut end_line = cursor.line_num;
+            let len_chars = trim_newlines(self.data.line(cursor.line_num)).len_chars();
+            if cursor.line_cidx >= len_chars {
+                end_line += 1;
+            }
+            // Delete
             self.data.remove(cidx..cursor.char_idx);
+            // Reformat
+            for (_, _, t) in &mut self.dpi_shaped_lines {
+                if end_line > start_line + 1 {
+                    t.drain((start_line + 1)..end_line);
+                }
+            }
+            self.format_lines_from(start_line, None);
+            // Metrics to place cursors
             (cidx, cursor.char_idx, cursor.view_id)
         };
 
@@ -344,14 +362,11 @@ impl Buffer {
             }
             inner.sync_from_and_udpate_char_idx_left(&self.data, self.tabsize);
         }
-
-        // Re-format lines
-        self.format_lines_from(self.data.char_to_line(start_cidx));
     }
 
     /// Delete to the right of cursor
     pub(crate) fn delete_right(&mut self, cursor: &mut BufferCursor, n: usize) {
-        // Delete contents
+        // Delete contents and reformat
         let (start_cidx, end_cidx, view_id) = {
             let cursor = &mut *cursor.inner.borrow_mut();
             let len_chars = self.data.len_chars();
@@ -363,7 +378,23 @@ impl Buffer {
             if final_cidx == cursor.char_idx {
                 return;
             }
+            // Calculate formatting replace range
+            let start_line = self.data.char_to_line(cursor.char_idx);
+            let mut end_line = self.data.char_to_line(final_cidx);
+            let len_chars = trim_newlines(self.data.line(final_cidx)).len_chars();
+            if final_cidx - self.data.line_to_char(end_line) >= len_chars {
+                end_line += 1;
+            }
+            // Delete
             self.data.remove(cursor.char_idx..final_cidx);
+            // Reformat
+            for (_, _, t) in &mut self.dpi_shaped_lines {
+                if end_line > start_line + 1 {
+                    t.drain((start_line + 1)..end_line);
+                }
+            }
+            self.format_lines_from(start_line, None);
+            // Metrics to place cursors
             (cursor.char_idx, final_cidx, cursor.view_id)
         };
 
@@ -385,7 +416,19 @@ impl Buffer {
         }
 
         // Re-format lines
-        self.format_lines_from(self.data.char_to_line(start_cidx));
+        let start_line = self.data.char_to_line(start_cidx);
+        let mut end_line = self.data.char_to_line(end_cidx);
+        let trimmed = trim_newlines(self.data.line(end_line));
+        if end_cidx >= trimmed.len_chars() {
+            end_line += 1;
+        }
+        for (_, _, t) in &mut self.dpi_shaped_lines {
+            t[start_line] = ShapedTextLine::default();
+            if end_line > start_line {
+                t.drain((start_line + 1)..end_line);
+            }
+        }
+        self.format_lines_from(self.data.char_to_line(start_cidx), None);
     }
 
     /// Delete to start of line
@@ -432,7 +475,7 @@ impl Buffer {
         }
 
         // Re-format lines
-        self.format_lines_from(cursor.line_num);
+        self.format_lines_from(cursor.line_num, None);
     }
 
     /// Delete to the end of line
@@ -465,7 +508,7 @@ impl Buffer {
         }
 
         // Re-format lines
-        self.format_lines_from(linum);
+        self.format_lines_from(linum, None);
     }
 
     pub(crate) fn delete_lines(&mut self, cursor: &mut BufferCursor, nlines: usize) {
@@ -507,8 +550,11 @@ impl Buffer {
             inner.line_global_x = 0;
         }
 
-        // Re-format lines
-        self.format_lines_from(linum);
+        // Reformat
+        for (_, _, t) in &mut self.dpi_shaped_lines {
+            t.drain(linum..(linum + nlines));
+        }
+        self.format_lines_from(linum, None);
     }
 
     pub(crate) fn delete_lines_up(&mut self, cursor: &mut BufferCursor, mut nlines: usize) {
@@ -569,8 +615,16 @@ impl Buffer {
             inner.sync_from_and_udpate_char_idx_right(&self.data, self.tabsize);
         }
 
-        // Re-format lines
-        self.format_lines_from(self.data.char_to_line(old_char_idx));
+        // Reformat
+        let linum = self.data.char_to_line(old_char_idx);
+        let mut end = None;
+        if c == '\n' {
+            for (_, _, t) in &mut self.dpi_shaped_lines {
+                t.insert(linum + 1, ShapedTextLine::default());
+            }
+            end = Some(linum + 1);
+        }
+        self.format_lines_from(linum, end);
     }
 
     /// Insert string at given cursor position
@@ -601,8 +655,15 @@ impl Buffer {
             inner.sync_from_and_udpate_char_idx_right(&self.data, self.tabsize);
         }
 
-        // Re-format lines
-        self.format_lines_from(self.data.char_to_line(old_char_idx));
+        // Reformat
+        let linum = self.data.char_to_line(old_char_idx);
+        let end_line = self.data.char_to_line(old_char_idx + ccount);
+        for (_, _, t) in &mut self.dpi_shaped_lines {
+            for _ in linum..end_line {
+                t.insert(linum + 1, ShapedTextLine::default());
+            }
+        }
+        self.format_lines_from(linum, Some(end_line));
     }
 
     /// Move cursor to given line number and gidx
@@ -729,11 +790,10 @@ impl Buffer {
         self.cursors.retain(|_, weak| weak.strong_count() > 0);
     }
 
-    fn format_lines_from(&mut self, start: usize) {
+    fn format_lines_from(&mut self, start: usize, opt_min_end: Option<usize>) {
         let font_core = &mut *self.font_core.borrow_mut();
         for (dpi, lvec, tvec) in &mut self.dpi_shaped_lines {
-            tvec.truncate(start);
-            for i in tvec.len()..self.data.len_lines() {
+            for i in start..self.data.len_lines() {
                 let line = self.data.line(i);
                 expand_line(line, self.tabsize, &mut self.fmtbuf);
                 let fmtline = TextLine(vec![TextSpan::new(
@@ -751,7 +811,18 @@ impl Buffer {
                     font_core,
                     *dpi,
                 );
-                tvec.push(shaped_line);
+                if i >= tvec.len() {
+                    tvec.push(shaped_line);
+                } else if tvec[i] != shaped_line {
+                    tvec[i] = shaped_line;
+                } else {
+                    if let Some(min) = opt_min_end {
+                        if i < min {
+                            continue;
+                        }
+                    }
+                    break;
+                }
             }
             for linum in lvec.len()..(tvec.len() + 1) {
                 self.fmtbuf.clear();
@@ -773,7 +844,7 @@ impl Buffer {
                 );
                 lvec.push(shaped_line);
             }
-            lvec.truncate(tvec.len() + 1);
+            // lvec.truncate(tvec.len() + 1);
         }
     }
 }
