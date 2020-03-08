@@ -2,17 +2,16 @@
 
 use std::cell::RefCell;
 use std::cmp::{max, min};
-use std::collections::VecDeque;
 use std::rc::Rc;
 
 use euclid::{point2, size2, Rect, Size2D};
 
 use crate::textbuffer::{Buffer, BufferCursor};
-use crate::types::{Color, PixelSize, TextPitch, TextSize, TextStyle, DPI};
+use crate::types::{Color, PixelSize, TextSize, DPI};
 
 use super::context::ActiveRenderCtx;
 use super::font::{FaceKey, FontCore};
-use super::text::{ShapedTextLine, TextCursorStyle, TextSpan};
+use super::text::{ShapedTextLine, TextCursorStyle};
 
 struct View {
     xbase: u32,
@@ -216,11 +215,7 @@ impl TextView {
                 }
             }
 
-            buffer.move_cursor_to_linum_gidx(
-                &mut view.cursor,
-                view.start_line + linum,
-                gidx as usize,
-            );
+            buffer.move_cursor_to_linum_gidx(&mut view.cursor, linum, gidx as usize);
         }
         self.snap_to_cursor();
     }
@@ -582,7 +577,7 @@ impl TextView {
 
         let rect = Rect::new(self.rect.origin, size2(gutter_width, self.rect.size.height)).cast();
         if view.xbase > 0 {
-            let vec = point2(5, 0).to_vector();
+            let vec = point2(3, 0).to_vector();
             actx.draw_shadow(rect.translate(vec));
         }
 

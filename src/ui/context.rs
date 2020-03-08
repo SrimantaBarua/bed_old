@@ -3,7 +3,7 @@
 use std::ffi::CStr;
 use std::ops::Drop;
 
-use euclid::{point2, Point2D, Rect, Size2D};
+use euclid::{point2, Point2D, Rect, SideOffsets2D, Size2D};
 
 use super::font::{FaceKey, RasterFace};
 use super::glyphrender::{ActiveGlyphRenderer, GlyphRenderer};
@@ -138,24 +138,23 @@ impl<'a> ActiveRenderCtx<'a> {
     }
 
     pub(super) fn draw_shadow(&mut self, rect: Rect<i32, PixelSize>) {
-        let frect = rect.cast();
+        let outer_dims = SideOffsets2D::new(5, 5, 5, 5);
+        let outer_rect = rect.outer_rect(outer_dims);
+
         self.active_gl.set_stencil_test(false);
         self.framebuffers[0].bind();
         {
             let active_shader = self.clr_quad_shader.use_program(&mut self.active_gl);
             self.clr_quad_arr
-                .push(ColorQuad::new(frect, Color::new(255, 0, 0, 255)));
+                .push(ColorQuad::new(rect.cast(), Color::new(255, 0, 0, 255)));
             self.clr_quad_arr.flush(&active_shader);
         }
         self.framebuffers[0].unbind();
         {
             let tex = self.framebuffers[0].get_texture();
             let active_shader = self.shadow_shader.use_program(&mut self.active_gl);
-            let trect = tex.get_tex_dimensions(rect);
-            let quad = TexQuad::new(
-                Rect::new(frect.origin, frect.size * 1.2),
-                Rect::new(trect.origin, trect.size * 1.2),
-            );
+            let trect = tex.get_tex_dimensions(outer_rect);
+            let quad = TexQuad::new(outer_rect.cast(), trect);
             self.tex_quad_arr.push(quad);
             self.tex_quad_arr.flush(&active_shader);
         }

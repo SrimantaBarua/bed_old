@@ -14,7 +14,6 @@ use glfw::{Action, Context, Glfw, Key, Modifiers, WindowEvent, WindowMode};
 use walkdir::WalkDir;
 
 use crate::core::Core;
-use crate::textbuffer::Buffer;
 use crate::types::{Color, PixelSize, TextSize};
 
 use super::context::RenderCtx;

@@ -125,7 +125,7 @@ impl FuzzyPopup {
         let inner_rect = rect.inner_rect(side_offsets);
 
         {
-            let size = size2(rect.size.width + 5, rect.size.height + 5);
+            let size = size2(rect.size.width + 3, rect.size.height + 3);
             let shadow_rect = Rect::new(rect.origin, size);
             actx.draw_shadow(shadow_rect.cast());
             let _ctx = actx.get_widget_context(rect.cast(), self.background_color);

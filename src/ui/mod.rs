@@ -62,7 +62,7 @@ impl UICore {
             (fixed_face, variable_face)
         };
         // Initialize editor core
-        let mut core = Core::new(fixed_face, variable_face, font_core.clone());
+        let core = Core::new(fixed_face, variable_face, font_core.clone());
         let first_buffer_path = args.value_of("FILE");
         // Create core and first window
         let ui_core = UICore {

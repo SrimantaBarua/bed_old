@@ -85,7 +85,7 @@ void main() {
 	for (int i = 0; i < 49; i++) {
 		alpha += texture(tex, tex_coord.st + offsets[i]).r * kernel[i];
 	}
-	alpha /= 10.0 * sum;
+	alpha /= 15.0 * sum;
 
 	out_color = vec4(0.0, 0.0, 0.0, alpha);
 }
