@@ -116,11 +116,6 @@ impl<'a> ActiveRenderCtx<'a> {
     pub(super) fn clear(&mut self) {
         self.active_gl.clear_color(self.clear_color);
         self.active_gl.clear();
-
-        self.framebuffers[0].bind();
-        self.active_gl.clear_color(Color::new(0, 0, 0, 255));
-        self.active_gl.clear();
-        self.framebuffers[0].unbind();
     }
 
     pub(super) fn get_widget_context<'b>(
@@ -143,6 +138,8 @@ impl<'a> ActiveRenderCtx<'a> {
 
         self.active_gl.set_stencil_test(false);
         self.framebuffers[0].bind();
+        self.active_gl.clear_color(Color::new(0, 0, 0, 255));
+        self.active_gl.clear();
         {
             let active_shader = self.clr_quad_shader.use_program(&mut self.active_gl);
             self.clr_quad_arr

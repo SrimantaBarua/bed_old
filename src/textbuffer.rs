@@ -755,10 +755,8 @@ impl Buffer {
             len_chars -= 1;
         }
         let diff = len_chars - cursor.line_cidx;
-        cursor.char_idx += diff;
         cursor.line_cidx += diff;
-        cursor.line_gidx = gidx_from_cidx(&trimmed, cursor.char_idx, self.tabsize);
-        cursor.line_global_x = cursor.line_gidx;
+        cursor.sync_line_cidx_gidx_right(&self.data, self.tabsize);
     }
 
     /// Move cursor to given line number
@@ -1045,11 +1043,8 @@ fn cidx_gidx_from_gidx(
         len_chars -= 1;
     }
     for g in RopeGraphemes::new(slice) {
-        if gcount >= gidx || cidx >= len_chars {
-            return (cidx, gcount);
-        }
         let count_here = g.chars().count();
-        if cidx + count_here > len_chars {
+        if gcount >= gidx || cidx + count_here > len_chars {
             return (cidx, gcount);
         }
         cidx += count_here;
@@ -1074,13 +1069,11 @@ fn cidx_gidx_from_global_x(
         len_chars -= 1;
     }
     for g in RopeGraphemes::new(slice) {
-        if ccount >= len_chars {
+        let count_here = g.chars().count();
+        if gidx >= global_x || ccount + count_here > len_chars {
             return (ccount, gidx);
         }
-        if gidx >= global_x {
-            return (ccount, gidx);
-        }
-        ccount += g.chars().count();
+        ccount += count_here;
         if g == "\t" {
             gidx = (gidx / tabsize) * tabsize + tabsize;
         } else {

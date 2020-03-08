@@ -169,7 +169,7 @@ impl Window {
         let fuzzy_popup = FuzzyPopup::new(
             inner_rect,
             40,
-            80,
+            90,
             10,
             10,
             2,
