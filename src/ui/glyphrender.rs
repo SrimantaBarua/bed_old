@@ -7,7 +7,7 @@ use euclid::{point2, size2, Point2D, Rect, Size2D};
 use guillotiere::{AllocId, AllocatorOptions, AtlasAllocator};
 
 use super::font::{FaceKey, RasterFace};
-use super::opengl::{ActiveShaderProgram, ElemArr, GlTexture, TexRed, TexUnit};
+use super::opengl::{ActiveShaderProgram, ElemArr, Gl, GlTexture, TexRed, TexUnit};
 use super::quad::TexColorQuad;
 use crate::types::{Color, PixelSize, TextSize, TextStyle, DPI};
 
@@ -84,14 +84,14 @@ pub(super) struct GlyphRenderer {
 
 impl GlyphRenderer {
     /// Initialize a new glyph renderer
-    pub(super) fn new(dpi: Size2D<u32, DPI>) -> GlyphRenderer {
+    pub(super) fn new(gl: &mut Gl, dpi: Size2D<u32, DPI>) -> GlyphRenderer {
         let options = AllocatorOptions {
             snap_size: 1,
             small_size_threshold: 8,
             large_size_threshold: 256,
         };
         GlyphRenderer {
-            atlas: GlTexture::new(TexUnit::Texture0, size2(GL_TEX_SIZE, GL_TEX_SIZE)),
+            atlas: gl.new_texture(TexUnit::Texture0, size2(GL_TEX_SIZE, GL_TEX_SIZE)),
             glyph_map: HashMap::new(),
             dpi: dpi,
             allocator: AtlasAllocator::with_options(

@@ -3,9 +3,14 @@
 use std::marker::PhantomData;
 use std::ops::Drop;
 use std::ptr;
+use std::rc::Rc;
 
+use super::gl::{
+    self,
+    types::{GLenum, GLuint},
+    GlInner,
+};
 use euclid::{point2, size2, Rect, Size2D};
-use gl::types::{GLenum, GLuint};
 
 use crate::types::{PixelSize, TextureSize};
 
@@ -54,6 +59,7 @@ where
     pub(super) id: GLuint,
     unit: TexUnit,
     size: Size2D<u32, PixelSize>,
+    gl: Rc<GlInner>,
     phantom: PhantomData<F>,
 }
 
@@ -61,17 +67,21 @@ impl<F> GlTexture<F>
 where
     F: TexFormat,
 {
-    pub(in crate::ui) fn new(unit: TexUnit, size: Size2D<u32, PixelSize>) -> GlTexture<F> {
+    pub(super) fn new(
+        gl: Rc<GlInner>,
+        unit: TexUnit,
+        size: Size2D<u32, PixelSize>,
+    ) -> GlTexture<F> {
         let mut id = 0;
         unsafe {
-            gl::GenTextures(1, &mut id);
-            gl::ActiveTexture(unit.to_gl());
-            gl::BindTexture(gl::TEXTURE_2D, id);
-            gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_WRAP_S, gl::CLAMP_TO_EDGE as i32);
-            gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_WRAP_T, gl::CLAMP_TO_EDGE as i32);
-            gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MIN_FILTER, gl::LINEAR as i32);
-            gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MAG_FILTER, gl::LINEAR as i32);
-            gl::TexImage2D(
+            gl.GenTextures(1, &mut id);
+            gl.ActiveTexture(unit.to_gl());
+            gl.BindTexture(gl::TEXTURE_2D, id);
+            gl.TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_WRAP_S, gl::CLAMP_TO_EDGE as i32);
+            gl.TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_WRAP_T, gl::CLAMP_TO_EDGE as i32);
+            gl.TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MIN_FILTER, gl::LINEAR as i32);
+            gl.TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MAG_FILTER, gl::LINEAR as i32);
+            gl.TexImage2D(
                 gl::TEXTURE_2D,
                 0,
                 F::format() as i32,
@@ -87,6 +97,7 @@ where
             id: id,
             size: size,
             unit: unit,
+            gl,
             phantom: PhantomData,
         }
     }
@@ -94,16 +105,16 @@ where
     /// Activate texture so that it can be used
     pub(in crate::ui) fn activate(&mut self) {
         unsafe {
-            gl::ActiveTexture(self.unit.to_gl());
-            gl::BindTexture(gl::TEXTURE_2D, self.id);
+            self.gl.ActiveTexture(self.unit.to_gl());
+            self.gl.BindTexture(gl::TEXTURE_2D, self.id);
         }
     }
 
     /// Deactivate texture
     pub(in crate::ui) fn deactivate(&mut self) {
         unsafe {
-            gl::ActiveTexture(self.unit.to_gl());
-            gl::BindTexture(gl::TEXTURE_2D, 0);
+            self.gl.ActiveTexture(self.unit.to_gl());
+            self.gl.BindTexture(gl::TEXTURE_2D, 0);
         }
     }
 
@@ -113,8 +124,8 @@ where
         assert!(max.x <= self.size.width, "texture coords out of bounds");
         assert!(max.y <= self.size.height, "texture coords out of bounds");
         unsafe {
-            gl::ActiveTexture(self.unit.to_gl());
-            gl::TexSubImage2D(
+            self.gl.ActiveTexture(self.unit.to_gl());
+            self.gl.TexSubImage2D(
                 gl::TEXTURE_2D,
                 0,
                 rect.origin.x as i32,
@@ -161,7 +172,7 @@ where
 {
     fn drop(&mut self) {
         unsafe {
-            gl::DeleteTextures(1, &mut self.id);
+            self.gl.DeleteTextures(1, &mut self.id);
         }
     }
 }

@@ -3,9 +3,10 @@
 use std::marker::PhantomData;
 use std::mem::size_of;
 use std::ptr;
+use std::rc::Rc;
 
+use super::gl::{self, types::GLuint, GlInner};
 use super::shader::ActiveShaderProgram;
-use gl::types::GLuint;
 
 pub(in crate::ui) trait Element {
     /// Number of floats per vertex
@@ -27,6 +28,7 @@ where
     cap: usize,
     vbuf: Vec<f32>,
     ebuf: Box<[u32]>,
+    gl: Rc<GlInner>,
     phantom: PhantomData<E>,
 }
 
@@ -34,7 +36,7 @@ impl<E> ElemArr<E>
 where
     E: Element,
 {
-    pub(in crate::ui) fn new(cap: usize) -> ElemArr<E> {
+    pub(super) fn new(gl: Rc<GlInner>, cap: usize) -> ElemArr<E> {
         let mut vao = 0;
         let mut vbo = 0;
         let mut ebo = 0;
@@ -42,22 +44,22 @@ where
         let ebo_size = cap * 6;
         let attribs = E::vertex_attributes();
         unsafe {
-            gl::GenVertexArrays(1, &mut vao);
-            gl::GenBuffers(1, &mut vbo);
-            gl::GenBuffers(1, &mut ebo);
+            gl.GenVertexArrays(1, &mut vao);
+            gl.GenBuffers(1, &mut vbo);
+            gl.GenBuffers(1, &mut ebo);
 
-            gl::BindVertexArray(vao);
+            gl.BindVertexArray(vao);
 
-            gl::BindBuffer(gl::ARRAY_BUFFER, vbo);
-            gl::BufferData(
+            gl.BindBuffer(gl::ARRAY_BUFFER, vbo);
+            gl.BufferData(
                 gl::ARRAY_BUFFER,
                 (vbo_size * size_of::<f32>()) as isize,
                 ptr::null(),
                 gl::STREAM_DRAW,
             );
 
-            gl::BindBuffer(gl::ELEMENT_ARRAY_BUFFER, ebo);
-            gl::BufferData(
+            gl.BindBuffer(gl::ELEMENT_ARRAY_BUFFER, ebo);
+            gl.BufferData(
                 gl::ELEMENT_ARRAY_BUFFER,
                 (ebo_size * size_of::<u32>()) as isize,
                 ptr::null(),
@@ -65,7 +67,7 @@ where
             );
 
             for i in 0..attribs.len() {
-                gl::VertexAttribPointer(
+                gl.VertexAttribPointer(
                     i as u32,
                     attribs[i].0,
                     gl::FLOAT,
@@ -73,7 +75,7 @@ where
                     (attribs[i].1 * size_of::<f32>()) as i32,
                     (attribs[i].2 * size_of::<f32>()) as *const _,
                 );
-                gl::EnableVertexAttribArray(i as u32);
+                gl.EnableVertexAttribArray(i as u32);
             }
         }
         let mut ebuf = Vec::with_capacity(cap * 6);
@@ -89,6 +91,7 @@ where
             cap: cap,
             vbuf: Vec::new(),
             ebuf: ebuf.into_boxed_slice(),
+            gl: gl,
             phantom: PhantomData,
         }
     }
@@ -105,19 +108,19 @@ where
         self.bind();
         while vbuf_len > vidx + vbo_size {
             unsafe {
-                gl::BufferSubData(
+                self.gl.BufferSubData(
                     gl::ARRAY_BUFFER,
                     0,
                     (vbo_size * size_of::<f32>()) as isize,
                     self.vbuf[vidx..].as_ptr() as *const _,
                 );
-                gl::BufferSubData(
+                self.gl.BufferSubData(
                     gl::ELEMENT_ARRAY_BUFFER,
                     0,
                     (ebo_size * size_of::<u32>()) as isize,
                     self.ebuf.as_ptr() as *const _,
                 );
-                gl::DrawElements(
+                self.gl.DrawElements(
                     gl::TRIANGLES,
                     ebo_size as i32,
                     gl::UNSIGNED_INT,
@@ -129,19 +132,19 @@ where
         if vbuf_len > vidx {
             let num_elems = ((vbuf_len - vidx) / (4 * E::num_points_per_vertex())) * 6;
             unsafe {
-                gl::BufferSubData(
+                self.gl.BufferSubData(
                     gl::ARRAY_BUFFER,
                     0,
                     ((vbuf_len - vidx) * size_of::<f32>()) as isize,
                     self.vbuf[vidx..].as_ptr() as *const _,
                 );
-                gl::BufferSubData(
+                self.gl.BufferSubData(
                     gl::ELEMENT_ARRAY_BUFFER,
                     0,
                     (num_elems * size_of::<u32>()) as isize,
                     self.ebuf.as_ptr() as *const _,
                 );
-                gl::DrawElements(
+                self.gl.DrawElements(
                     gl::TRIANGLES,
                     num_elems as i32,
                     gl::UNSIGNED_INT,
@@ -155,17 +158,17 @@ where
 
     fn bind(&mut self) {
         unsafe {
-            gl::BindVertexArray(self.vao);
-            gl::BindBuffer(gl::ARRAY_BUFFER, self.vbo);
-            gl::BindBuffer(gl::ELEMENT_ARRAY_BUFFER, self.ebo);
+            self.gl.BindVertexArray(self.vao);
+            self.gl.BindBuffer(gl::ARRAY_BUFFER, self.vbo);
+            self.gl.BindBuffer(gl::ELEMENT_ARRAY_BUFFER, self.ebo);
         }
     }
 
     fn unbind(&mut self) {
         unsafe {
-            gl::BindBuffer(gl::ELEMENT_ARRAY_BUFFER, 0);
-            gl::BindBuffer(gl::ARRAY_BUFFER, 0);
-            gl::BindVertexArray(0);
+            self.gl.BindBuffer(gl::ELEMENT_ARRAY_BUFFER, 0);
+            self.gl.BindBuffer(gl::ARRAY_BUFFER, 0);
+            self.gl.BindVertexArray(0);
         }
     }
 }
@@ -176,9 +179,9 @@ where
 {
     fn drop(&mut self) {
         unsafe {
-            gl::DeleteBuffers(1, &mut self.ebo);
-            gl::DeleteBuffers(1, &mut self.vbo);
-            gl::DeleteVertexArrays(1, &mut self.vao);
+            self.gl.DeleteBuffers(1, &mut self.ebo);
+            self.gl.DeleteBuffers(1, &mut self.vbo);
+            self.gl.DeleteVertexArrays(1, &mut self.vao);
         }
     }
 }

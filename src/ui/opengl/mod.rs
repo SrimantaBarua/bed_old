@@ -1,14 +1,13 @@
 // (C) 2019 Srimanta Barua <srimanta.barua1@gmail.com>
 
 use std::fmt;
+use std::rc::Rc;
 
 use euclid::{Rect, Size2D};
-use glfw::{Context, Window};
+use glfw::Window;
 
 use crate::types::{Color, PixelSize};
 
-#[macro_use]
-mod error;
 mod framebuffer;
 mod shader;
 mod texture;
@@ -19,30 +18,33 @@ pub(super) use shader::{ActiveShaderProgram, ShaderProgram};
 pub(super) use texture::{GlTexture, TexRGB, TexRed, TexUnit};
 pub(super) use vert_array::{ElemArr, Element};
 
-/// Placeholder for a GL context that is not being used
-#[derive(Clone)]
-pub(super) struct Gl;
-
-impl Gl {
-    pub(super) fn activate(&mut self, window: &mut Window) -> ActiveGl {
-        window.make_current();
-        unsafe {
-            gl::Enable(gl::BLEND);
-            gl::BlendFunc(gl::SRC_ALPHA, gl::ONE_MINUS_SRC_ALPHA);
-            gl::ActiveTexture(gl::TEXTURE0);
-            gl::PixelStorei(gl::UNPACK_ALIGNMENT, 1);
-            gl::PixelStorei(gl::PACK_ALIGNMENT, 1);
-        }
-        ActiveGl(self)
-    }
+mod gl {
+    pub(super) use self::Gles2 as GlInner;
+    include!(concat!(env!("OUT_DIR"), "/gl_bindings.rs"));
 }
 
-pub(super) struct ActiveGl<'a>(&'a Gl);
+/// Placeholder for a GL context that is not being used
+#[derive(Clone)]
+pub(super) struct Gl {
+    gl: Rc<gl::GlInner>,
+}
 
-impl<'a> ActiveGl<'a> {
+impl Gl {
+    pub(super) fn load(window: &mut Window) -> Gl {
+        let gl = Rc::new(gl::GlInner::load_with(|s| window.get_proc_address(s)));
+        unsafe {
+            gl.Enable(gl::BLEND);
+            gl.BlendFunc(gl::SRC_ALPHA, gl::ONE_MINUS_SRC_ALPHA);
+            gl.ActiveTexture(gl::TEXTURE0);
+            gl.PixelStorei(gl::UNPACK_ALIGNMENT, 1);
+            gl.PixelStorei(gl::PACK_ALIGNMENT, 1);
+        }
+        Gl { gl }
+    }
+
     pub(super) fn viewport(&mut self, rect: Rect<i32, PixelSize>) {
         unsafe {
-            gl::Viewport(
+            self.gl.Viewport(
                 rect.origin.x,
                 rect.origin.y,
                 rect.size.width,
@@ -54,49 +56,90 @@ impl<'a> ActiveGl<'a> {
     pub(super) fn clear_color(&mut self, color: Color) {
         let (r, g, b, a) = color.to_opengl_color();
         unsafe {
-            gl::ClearColor(r, g, b, a);
+            self.gl.ClearColor(r, g, b, a);
         }
     }
 
     pub(super) fn clear(&mut self) {
         unsafe {
-            gl::Clear(gl::COLOR_BUFFER_BIT | gl::STENCIL_BUFFER_BIT);
+            self.gl.Clear(gl::COLOR_BUFFER_BIT | gl::STENCIL_BUFFER_BIT);
         }
     }
 
     pub(super) fn set_stencil_test(&mut self, val: bool) {
         if val {
             unsafe {
-                gl::Enable(gl::STENCIL_TEST);
-                gl::StencilOp(gl::ZERO, gl::ZERO, gl::REPLACE);
+                self.gl.Enable(gl::STENCIL_TEST);
+                self.gl.StencilOp(gl::ZERO, gl::ZERO, gl::REPLACE);
             }
         } else {
             unsafe {
-                gl::Disable(gl::STENCIL_TEST);
+                self.gl.Disable(gl::STENCIL_TEST);
             }
         }
     }
 
     pub(super) fn set_stencil_writing(&mut self) {
         unsafe {
-            gl::StencilFunc(gl::ALWAYS, 1, 0xff);
-            gl::StencilMask(0xff);
+            self.gl.StencilFunc(gl::ALWAYS, 1, 0xff);
+            self.gl.StencilMask(0xff);
         }
     }
 
     pub(super) fn set_stencil_reading(&mut self) {
         unsafe {
-            gl::StencilFunc(gl::EQUAL, 1, 0xff);
-            gl::StencilMask(0x00);
+            self.gl.StencilFunc(gl::EQUAL, 1, 0xff);
+            self.gl.StencilMask(0x00);
         }
     }
 
     pub(super) fn clear_stencil(&mut self) {
         unsafe {
-            gl::StencilMask(0xff);
-            gl::Clear(gl::STENCIL_BUFFER_BIT);
-            gl::StencilMask(0x00);
+            self.gl.StencilMask(0xff);
+            self.gl.Clear(gl::STENCIL_BUFFER_BIT);
+            self.gl.StencilMask(0x00);
         }
+    }
+
+    pub(super) fn new_elem_arr<E>(&mut self, cap: usize) -> ElemArr<E>
+    where
+        E: Element,
+    {
+        ElemArr::new(self.gl.clone(), cap)
+    }
+
+    pub(super) fn new_shader(&mut self, vsrc: &str, fsrc: &str) -> Result<ShaderProgram, String> {
+        ShaderProgram::new(self.gl.clone(), vsrc, fsrc)
+    }
+
+    pub(super) fn use_shader<'a, 'b>(
+        &'a mut self,
+        shader: &'b mut ShaderProgram,
+    ) -> ActiveShaderProgram<'a, 'b> {
+        shader.use_program(self)
+    }
+
+    pub(super) fn new_texture<T>(
+        &mut self,
+        unit: TexUnit,
+        size: Size2D<u32, PixelSize>,
+    ) -> GlTexture<T>
+    where
+        T: texture::TexFormat,
+    {
+        GlTexture::new(self.gl.clone(), unit, size)
+    }
+
+    pub(super) fn new_framebuffer(
+        &mut self,
+        unit: TexUnit,
+        size: Size2D<u32, PixelSize>,
+    ) -> Framebuffer {
+        Framebuffer::new(self.gl.clone(), unit, size)
+    }
+
+    fn get_error(&mut self) -> Option<GlErrTyp> {
+        GlErrTyp::from_raw(unsafe { self.gl.GetError() })
     }
 }
 
@@ -147,4 +190,61 @@ impl fmt::Display for Mat4 {
             self.0[3], self.0[7], self.0[11], self.0[15]
         )
     }
+}
+
+#[derive(Debug, Eq, PartialEq)]
+pub(super) enum GlErrTyp {
+    InvalidEnum,
+    InvalidValue,
+    InvalidOperation,
+    StackOverflow,
+    StackUnderflow,
+    OutOfMemory,
+    InvalidFramebufferOperation,
+}
+
+impl GlErrTyp {
+    fn from_raw(raw: u32) -> Option<GlErrTyp> {
+        match raw {
+            gl::INVALID_ENUM => Some(GlErrTyp::InvalidEnum),
+            gl::INVALID_VALUE => Some(GlErrTyp::InvalidValue),
+            gl::INVALID_OPERATION => Some(GlErrTyp::InvalidOperation),
+            gl::STACK_OVERFLOW => Some(GlErrTyp::StackOverflow),
+            gl::STACK_UNDERFLOW => Some(GlErrTyp::StackUnderflow),
+            gl::OUT_OF_MEMORY => Some(GlErrTyp::OutOfMemory),
+            gl::INVALID_FRAMEBUFFER_OPERATION => Some(GlErrTyp::InvalidFramebufferOperation),
+            _ => None,
+        }
+    }
+}
+
+impl fmt::Display for GlErrTyp {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            GlErrTyp::InvalidEnum => write!(f, "invalid enum"),
+            GlErrTyp::InvalidValue => write!(f, "invalid value"),
+            GlErrTyp::InvalidOperation => write!(f, "invalid operation"),
+            GlErrTyp::StackOverflow => write!(f, "stack overflow"),
+            GlErrTyp::StackUnderflow => write!(f, "stack underflow"),
+            GlErrTyp::OutOfMemory => write!(f, "out of memory"),
+            GlErrTyp::InvalidFramebufferOperation => write!(f, "invalid framebuffer operation"),
+        }
+    }
+}
+
+macro_rules! gl_error_check {
+    (gl:tt) => {
+        {
+            if let Some(err) = gl.get_error() {
+                panic!("OpenGL error: {}", err);
+            }
+        }
+    };
+    (gl:tt, $($arg:tt)*) => {
+        {
+            if let Some(err) = gl.get_error() {
+                panic!("OpenGL error: {}: {}", format_args!($($arg)*), err);
+            }
+        }
+    };
 }

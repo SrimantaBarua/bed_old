@@ -4,10 +4,11 @@ use std::ffi::CStr;
 use std::ops::Drop;
 
 use euclid::{point2, Point2D, Rect, SideOffsets2D, Size2D};
+use glfw::Context;
 
 use super::font::{FaceKey, RasterFace};
 use super::glyphrender::{ActiveGlyphRenderer, GlyphRenderer};
-use super::opengl::{ActiveGl, ElemArr, Framebuffer, Gl, Mat4, ShaderProgram, TexUnit};
+use super::opengl::{ElemArr, Framebuffer, Gl, Mat4, ShaderProgram, TexUnit};
 use super::quad::{ColorQuad, TexColorQuad, TexQuad};
 use crate::types::{Color, PixelSize, TextSize, TextStyle, DPI};
 
@@ -32,45 +33,57 @@ pub(super) struct RenderCtx {
 
 impl RenderCtx {
     pub(super) fn new(
+        window: &mut glfw::Window,
         size: Size2D<u32, PixelSize>,
         dpi: Size2D<u32, DPI>,
         clear_color: Color,
     ) -> RenderCtx {
+        // Initialize opengl context
+        let mut gl = Gl::load(window);
         // Compile and link shaders
         let clr_vsrc = include_str!("opengl/shader_src/colored_quad.vert");
         let clr_fsrc = include_str!("opengl/shader_src/colored_quad.frag");
-        let clr_shader = ShaderProgram::new(clr_vsrc, clr_fsrc).expect("failed to compile shader");
+        let clr_shader = gl
+            .new_shader(clr_vsrc, clr_fsrc)
+            .expect("failed to compile shader");
         let tex_clr_vsrc = include_str!("opengl/shader_src/tex_color_quad.vert");
         let tex_clr_fsrc = include_str!("opengl/shader_src/tex_color_quad.frag");
-        let tex_clr_shader =
-            ShaderProgram::new(tex_clr_vsrc, tex_clr_fsrc).expect("failed to compile shader");
+        let tex_clr_shader = gl
+            .new_shader(tex_clr_vsrc, tex_clr_fsrc)
+            .expect("failed to compile shader");
         let shadow_vsrc = include_str!("opengl/shader_src/shadow.vert");
         let shadow_fsrc = include_str!("opengl/shader_src/shadow.frag");
-        let shadow_shader =
-            ShaderProgram::new(shadow_vsrc, shadow_fsrc).expect("failed to compile shader");
+        let shadow_shader = gl
+            .new_shader(shadow_vsrc, shadow_fsrc)
+            .expect("failed to compile shader");
+        let clr_quad_arr = gl.new_elem_arr(64);
+        let tex_clr_quad_arr = gl.new_elem_arr(4096);
+        let tex_quad_arr = gl.new_elem_arr(4);
+        let framebuffer = gl.new_framebuffer(TexUnit::Texture1, size);
+        let glyph_renderer = GlyphRenderer::new(&mut gl, dpi);
         RenderCtx {
-            gl: Gl,
+            gl: gl,
             projection_matrix: Mat4::projection(size.cast()),
             size: size,
             dpi: dpi,
             clear_color: clear_color,
-            glyph_renderer: GlyphRenderer::new(dpi),
+            glyph_renderer: glyph_renderer,
             clr_quad_shader: clr_shader,
             tex_clr_quad_shader: tex_clr_shader,
             shadow_shader: shadow_shader,
-            clr_quad_arr: ElemArr::new(64),
-            tex_clr_quad_arr: ElemArr::new(4096),
-            tex_quad_arr: ElemArr::new(8),
-            framebuffers: [Framebuffer::new(TexUnit::Texture1, size)],
+            clr_quad_arr: clr_quad_arr,
+            tex_clr_quad_arr: tex_clr_quad_arr,
+            tex_quad_arr: tex_quad_arr,
+            framebuffers: [framebuffer],
         }
     }
 
     pub(super) fn activate(&mut self, window: &mut glfw::Window) -> ActiveRenderCtx {
-        let mut active_gl = self.gl.activate(window);
-        active_gl.viewport(Rect::new(point2(0, 0), self.size.cast()));
+        window.make_current();
+        self.gl.viewport(Rect::new(point2(0, 0), self.size.cast()));
         self.framebuffers[0].bind_texture();
         let mut ret = ActiveRenderCtx {
-            active_gl: active_gl,
+            gl: &mut self.gl,
             size: self.size,
             projection_matrix: &self.projection_matrix,
             dpi: self.dpi,
@@ -95,7 +108,7 @@ impl RenderCtx {
 }
 
 pub(super) struct ActiveRenderCtx<'a> {
-    active_gl: ActiveGl<'a>,
+    gl: &'a mut Gl,
     size: Size2D<u32, PixelSize>,
     projection_matrix: &'a Mat4,
     clear_color: Color,
@@ -114,8 +127,8 @@ pub(super) struct ActiveRenderCtx<'a> {
 
 impl<'a> ActiveRenderCtx<'a> {
     pub(super) fn clear(&mut self) {
-        self.active_gl.clear_color(self.clear_color);
-        self.active_gl.clear();
+        self.gl.clear_color(self.clear_color);
+        self.gl.clear();
     }
 
     pub(super) fn get_widget_context<'b>(
@@ -136,12 +149,12 @@ impl<'a> ActiveRenderCtx<'a> {
         let outer_dims = SideOffsets2D::new(5, 5, 5, 5);
         let outer_rect = rect.outer_rect(outer_dims);
 
-        self.active_gl.set_stencil_test(false);
+        self.gl.set_stencil_test(false);
         self.framebuffers[0].bind();
-        self.active_gl.clear_color(Color::new(0, 0, 0, 255));
-        self.active_gl.clear();
+        self.gl.clear_color(Color::new(0, 0, 0, 255));
+        self.gl.clear();
         {
-            let active_shader = self.clr_quad_shader.use_program(&mut self.active_gl);
+            let active_shader = self.gl.use_shader(self.clr_quad_shader);
             self.clr_quad_arr
                 .push(ColorQuad::new(rect.cast(), Color::new(255, 0, 0, 255)));
             self.clr_quad_arr.flush(&active_shader);
@@ -149,7 +162,7 @@ impl<'a> ActiveRenderCtx<'a> {
         self.framebuffers[0].unbind();
         {
             let tex = self.framebuffers[0].get_texture();
-            let active_shader = self.shadow_shader.use_program(&mut self.active_gl);
+            let active_shader = self.gl.use_shader(self.shadow_shader);
             let trect = tex.get_tex_dimensions(outer_rect);
             let quad = TexQuad::new(outer_rect.cast(), trect);
             self.tex_quad_arr.push(quad);
@@ -162,16 +175,16 @@ impl<'a> ActiveRenderCtx<'a> {
         let text = CStr::from_bytes_with_nul(b"text\0").unwrap();
         let tex = CStr::from_bytes_with_nul(b"tex\0").unwrap();
         {
-            let mut active_shader = self.clr_quad_shader.use_program(&mut self.active_gl);
+            let mut active_shader = self.gl.use_shader(self.clr_quad_shader);
             active_shader.uniform_mat4f(&projection, &self.projection_matrix);
         }
         {
-            let mut active_shader = self.tex_clr_quad_shader.use_program(&mut self.active_gl);
+            let mut active_shader = self.gl.use_shader(self.tex_clr_quad_shader);
             active_shader.uniform_mat4f(&projection, &self.projection_matrix);
             active_shader.uniform_1i(&text, 0);
         }
         {
-            let mut active_shader = self.shadow_shader.use_program(&mut self.active_gl);
+            let mut active_shader = self.gl.use_shader(self.shadow_shader);
             active_shader.uniform_mat4f(&projection, &self.projection_matrix);
             active_shader.uniform_1i(&tex, 1);
         }
@@ -213,41 +226,41 @@ impl<'a, 'b> WidgetRenderCtx<'a, 'b> {
         {
             let active_shader = self
                 .active_ctx
-                .clr_quad_shader
-                .use_program(&mut self.active_ctx.active_gl);
+                .gl
+                .use_shader(&mut self.active_ctx.clr_quad_shader);
             self.active_ctx.clr_quad_arr.flush(&active_shader);
         }
         {
             let active_shader = self
                 .active_ctx
-                .tex_clr_quad_shader
-                .use_program(&mut self.active_ctx.active_gl);
+                .gl
+                .use_shader(&mut self.active_ctx.tex_clr_quad_shader);
             self.active_ctx.active_glyph_renderer.flush(&active_shader);
         }
     }
 
     fn draw_bg_stencil(&mut self) {
         // Activate stencil writing
-        self.active_ctx.active_gl.set_stencil_test(true);
-        self.active_ctx.active_gl.set_stencil_writing();
+        self.active_ctx.gl.set_stencil_test(true);
+        self.active_ctx.gl.set_stencil_writing();
         // Draw background and write to stencil
         {
             let active_shader = self
                 .active_ctx
-                .clr_quad_shader
-                .use_program(&mut self.active_ctx.active_gl);
+                .gl
+                .use_shader(&mut self.active_ctx.clr_quad_shader);
             self.active_ctx
                 .clr_quad_arr
                 .push(ColorQuad::new(self.rect.cast(), self.background_color));
             self.active_ctx.clr_quad_arr.flush(&active_shader);
         }
-        self.active_ctx.active_gl.set_stencil_reading();
+        self.active_ctx.gl.set_stencil_reading();
     }
 }
 
 impl<'a, 'b> Drop for WidgetRenderCtx<'a, 'b> {
     fn drop(&mut self) {
         self.flush();
-        self.active_ctx.active_gl.clear_stencil();
+        self.active_ctx.gl.clear_stencil();
     }
 }

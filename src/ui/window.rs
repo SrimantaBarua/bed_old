@@ -118,7 +118,6 @@ impl Window {
             window.set_refresh_polling(true);
             window.set_framebuffer_size_polling(true);
             window.set_mouse_button_polling(true);
-            gl::load_with(|s| glfw.get_proc_address_raw(s));
             // Return stuff
             (window, events, dpi)
         };
@@ -186,10 +185,11 @@ impl Window {
         // Make window visible
         window.show();
         // Return window wrapper
+        let ctx = RenderCtx::new(&mut window, size2(width, height), dpi, CLEAR_COLOR);
         (
             Window {
                 window: window,
-                render_ctx: RenderCtx::new(size2(width, height), dpi, CLEAR_COLOR),
+                render_ctx: ctx,
                 glfw: glfw,
                 core: core,
                 fixed_face: fixed_face,
