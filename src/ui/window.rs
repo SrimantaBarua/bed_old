@@ -251,10 +251,7 @@ impl Window {
         }
 
         // If there is any velocity, we need to refresh
-        let textview_scroll_s = (
-            textview_scroll_sx as i32,
-            textview_scroll_sy as i32,
-        );
+        let textview_scroll_s = (textview_scroll_sx as i32, textview_scroll_sy as i32);
         if textview_scroll_s != (0, 0) {
             to_refresh = true;
             self.textview.scroll(textview_scroll_s);

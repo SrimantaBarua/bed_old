@@ -14,6 +14,17 @@ pub(crate) enum TextWeight {
     Bold,
 }
 
+impl TextWeight {
+    pub(crate) fn from_str(s: &str) -> Option<TextWeight> {
+        match s {
+            "medium" => Some(TextWeight::Medium),
+            "light" => Some(TextWeight::Light),
+            "bold" => Some(TextWeight::Bold),
+            _ => None,
+        }
+    }
+}
+
 impl Default for TextWeight {
     fn default() -> TextWeight {
         TextWeight::Medium
@@ -25,6 +36,17 @@ pub(crate) enum TextSlant {
     Roman,
     Italic,
     Oblique,
+}
+
+impl TextSlant {
+    pub(crate) fn from_str(s: &str) -> Option<TextSlant> {
+        match s {
+            "roman" => Some(TextSlant::Roman),
+            "italic" => Some(TextSlant::Italic),
+            "oblique" => Some(TextSlant::Oblique),
+            _ => None,
+        }
+    }
 }
 
 impl Default for TextSlant {

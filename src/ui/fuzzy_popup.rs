@@ -10,7 +10,7 @@ use unicode_segmentation::{GraphemeCursor, UnicodeSegmentation};
 
 use crate::config::{Cfg, CfgTheme};
 use crate::font::FontCore;
-use crate::types::{Color, PixelSize, TextPitch, TextStyle, DPI};
+use crate::types::{PixelSize, TextPitch, TextStyle, DPI};
 
 use super::context::ActiveRenderCtx;
 use super::text::{ShapedTextLine, TextCursorStyle, TextLine, TextSpan};
@@ -74,20 +74,20 @@ impl FuzzyPopup {
     pub(super) fn draw(&mut self, actx: &mut ActiveRenderCtx) {
         self.to_refresh = false;
 
-        let width = (self.window_rect.size.width * self.theme.fuzzy_width_percentage) / 100;
+        let width = (self.window_rect.size.width * self.theme.ui.fuzzy_width_percentage) / 100;
         let lpad = (self.window_rect.size.width - width) / 2;
         let origin = point2(
             self.window_rect.origin.x + lpad,
             self.window_rect.origin.y + self.window_rect.size.height
                 - self.height
-                - self.theme.fuzzy_bottom_offset,
+                - self.theme.ui.fuzzy_bottom_offset,
         );
         let size = size2(width, self.height);
         let side_offsets = SideOffsets2D::new(
-            self.theme.fuzzy_edge_padding,
-            self.theme.fuzzy_edge_padding,
-            self.theme.fuzzy_edge_padding,
-            self.theme.fuzzy_edge_padding,
+            self.theme.ui.fuzzy_edge_padding,
+            self.theme.ui.fuzzy_edge_padding,
+            self.theme.ui.fuzzy_edge_padding,
+            self.theme.ui.fuzzy_edge_padding,
         );
         let rect = Rect::new(origin, size);
         let inner_rect = rect.inner_rect(side_offsets);
@@ -96,11 +96,12 @@ impl FuzzyPopup {
             let size = size2(rect.size.width + 3, rect.size.height + 3);
             let shadow_rect = Rect::new(rect.origin, size);
             actx.draw_shadow(shadow_rect.cast());
-            let _ctx = actx.get_widget_context(rect.cast(), self.theme.fuzzy_background_color);
+            let _ctx = actx.get_widget_context(rect.cast(), self.theme.ui.fuzzy_background_color);
         }
 
         let font_core = &mut *self.font_core.borrow_mut();
-        let mut ctx = actx.get_widget_context(inner_rect.cast(), self.theme.fuzzy_background_color);
+        let mut ctx =
+            actx.get_widget_context(inner_rect.cast(), self.theme.ui.fuzzy_background_color);
         let mut pos = point2(0, inner_rect.size.height as i32);
         pos.y += min(
             self.input_line.metrics.descender,
@@ -129,7 +130,7 @@ impl FuzzyPopup {
             Some((
                 self.cursor_gidx,
                 TextCursorStyle::Beam,
-                self.theme.fuzzy_cursor_color,
+                self.theme.ui.fuzzy_cursor_color,
             )),
         );
         pos.y -= max(
@@ -141,11 +142,11 @@ impl FuzzyPopup {
         if self.lines.len() > 0 {
             for i in 0..self.lines.len() {
                 let line = &self.lines[i];
-                pos.y -= (line.metrics.height + 2 * self.theme.fuzzy_line_spacing) as i32;
+                pos.y -= (line.metrics.height + 2 * self.theme.ui.fuzzy_line_spacing) as i32;
 
                 if i == self.select_idx {
                     let rect = Rect::new(pos, size2(width, self.lines[i].metrics.height).cast());
-                    ctx.color_quad(rect, self.theme.fuzzy_select_background_color);
+                    ctx.color_quad(rect, self.theme.ui.fuzzy_select_background_color);
                 }
 
                 let mut pos_here = pos;
@@ -343,7 +344,7 @@ impl FuzzyPopup {
 
     fn refresh(&mut self) {
         let max_height =
-            (self.theme.fuzzy_max_height_percentage * self.window_rect.size.height) / 100;
+            (self.theme.ui.fuzzy_max_height_percentage * self.window_rect.size.height) / 100;
         self.lines.clear();
         let font_core = &mut *self.font_core.borrow_mut();
 
@@ -351,14 +352,14 @@ impl FuzzyPopup {
             ShapedTextLine::from_textstr(
                 TextSpan::new(
                     " ",
-                    self.theme.fuzzy_text_size,
+                    self.theme.ui.fuzzy_text_size,
                     TextStyle::default(),
-                    self.theme.fuzzy_foreground_color,
+                    self.theme.ui.fuzzy_foreground_color,
                     TextPitch::Variable,
                     None,
                 ),
-                self.theme.fuzzy_face,
-                self.theme.fuzzy_face,
+                self.theme.ui.fuzzy_face,
+                self.theme.ui.fuzzy_face,
                 font_core,
                 self.dpi,
             )
@@ -366,14 +367,14 @@ impl FuzzyPopup {
             ShapedTextLine::from_textstr(
                 TextSpan::new(
                     &self.user_input,
-                    self.theme.fuzzy_text_size,
+                    self.theme.ui.fuzzy_text_size,
                     TextStyle::default(),
-                    self.theme.fuzzy_foreground_color,
+                    self.theme.ui.fuzzy_foreground_color,
                     TextPitch::Variable,
                     None,
                 ),
-                self.theme.fuzzy_face,
-                self.theme.fuzzy_face,
+                self.theme.ui.fuzzy_face,
+                self.theme.ui.fuzzy_face,
                 font_core,
                 self.dpi,
             )
@@ -383,14 +384,14 @@ impl FuzzyPopup {
             ShapedTextLine::from_textstr(
                 TextSpan::new(
                     " ",
-                    self.theme.fuzzy_text_size,
+                    self.theme.ui.fuzzy_text_size,
                     TextStyle::default(),
-                    self.theme.fuzzy_label_color,
+                    self.theme.ui.fuzzy_label_color,
                     TextPitch::Variable,
                     None,
                 ),
-                self.theme.fuzzy_face,
-                self.theme.fuzzy_face,
+                self.theme.ui.fuzzy_face,
+                self.theme.ui.fuzzy_face,
                 font_core,
                 self.dpi,
             )
@@ -398,14 +399,14 @@ impl FuzzyPopup {
             ShapedTextLine::from_textstr(
                 TextSpan::new(
                     &self.input_label_str,
-                    self.theme.fuzzy_text_size,
+                    self.theme.ui.fuzzy_text_size,
                     TextStyle::default(),
-                    self.theme.fuzzy_label_color,
+                    self.theme.ui.fuzzy_label_color,
                     TextPitch::Variable,
                     None,
                 ),
-                self.theme.fuzzy_face,
-                self.theme.fuzzy_face,
+                self.theme.ui.fuzzy_face,
+                self.theme.ui.fuzzy_face,
                 font_core,
                 self.dpi,
             )
@@ -414,20 +415,20 @@ impl FuzzyPopup {
         self.height = max(
             self.input_line.metrics.height,
             self.input_label.metrics.height,
-        ) + self.theme.fuzzy_edge_padding * 2
-            + self.theme.fuzzy_line_spacing;
+        ) + self.theme.ui.fuzzy_edge_padding * 2
+            + self.theme.ui.fuzzy_line_spacing;
 
         let mut i = 0;
         for (_, line, indices) in &self.filtered {
             let match_color = if i == self.select_idx {
-                self.theme.fuzzy_select_match_color
+                self.theme.ui.fuzzy_select_match_color
             } else {
-                self.theme.fuzzy_match_color
+                self.theme.ui.fuzzy_match_color
             };
             let color = if i == self.select_idx {
-                self.theme.fuzzy_select_color
+                self.theme.ui.fuzzy_select_color
             } else {
-                self.theme.fuzzy_foreground_color
+                self.theme.ui.fuzzy_foreground_color
             };
 
             let mut textline = TextLine::default();
@@ -436,7 +437,7 @@ impl FuzzyPopup {
                 if j < *start {
                     textline.0.push(TextSpan::new(
                         &line[j..*start],
-                        self.theme.fuzzy_text_size,
+                        self.theme.ui.fuzzy_text_size,
                         TextStyle::default(),
                         color,
                         TextPitch::Variable,
@@ -445,7 +446,7 @@ impl FuzzyPopup {
                 }
                 textline.0.push(TextSpan::new(
                     &line[*start..*end],
-                    self.theme.fuzzy_text_size,
+                    self.theme.ui.fuzzy_text_size,
                     TextStyle::default(),
                     match_color,
                     TextPitch::Variable,
@@ -456,7 +457,7 @@ impl FuzzyPopup {
             if j < line.len() {
                 textline.0.push(TextSpan::new(
                     &line[j..],
-                    self.theme.fuzzy_text_size,
+                    self.theme.ui.fuzzy_text_size,
                     TextStyle::default(),
                     color,
                     TextPitch::Variable,
@@ -466,20 +467,20 @@ impl FuzzyPopup {
 
             let fmtline = ShapedTextLine::from_textline(
                 textline,
-                self.theme.fuzzy_face,
-                self.theme.fuzzy_face,
+                self.theme.ui.fuzzy_face,
+                self.theme.ui.fuzzy_face,
                 font_core,
                 self.dpi,
             );
             if self.height
-                + self.theme.fuzzy_bottom_offset
-                + self.theme.fuzzy_line_spacing * 2
+                + self.theme.ui.fuzzy_bottom_offset
+                + self.theme.ui.fuzzy_line_spacing * 2
                 + fmtline.metrics.height
                 > max_height
             {
                 break;
             }
-            self.height += fmtline.metrics.height + self.theme.fuzzy_line_spacing * 2;
+            self.height += fmtline.metrics.height + self.theme.ui.fuzzy_line_spacing * 2;
             self.lines.push(fmtline);
             i += 1;
         }

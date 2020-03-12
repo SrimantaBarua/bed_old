@@ -2,11 +2,12 @@
 
 use std::cell::RefCell;
 use std::rc::Rc;
-use std::{time, thread};
+use std::{thread, time};
 
 mod config;
 mod core;
 mod font;
+mod syntax;
 mod textbuffer;
 mod types;
 mod ui;

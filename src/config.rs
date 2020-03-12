@@ -8,7 +8,7 @@ use directories::ProjectDirs;
 use yaml_rust::yaml::{Yaml, YamlLoader};
 
 use crate::font::{FaceKey, FontCore};
-use crate::types::{Color, TextSize};
+use crate::types::{Color, TextSize, TextSlant, TextStyle, TextWeight};
 
 #[cfg(target_os = "linux")]
 const FIXED_FONT: &'static str = "monospace";
@@ -21,7 +21,21 @@ const VARIABLE_FONT: &'static str = "sans";
 const VARIABLE_FONT: &'static str = "Arial";
 
 #[derive(Clone)]
-pub(crate) struct CfgTheme {
+pub(crate) struct CfgThemeSyntaxElem {
+    pub(crate) foreground_color: Color,
+    pub(crate) style: TextStyle,
+}
+
+#[derive(Clone, Default)]
+pub(crate) struct CfgThemeSyntax {
+    pub(crate) comment: Option<CfgThemeSyntaxElem>,
+    pub(crate) keyword: Option<CfgThemeSyntaxElem>,
+    pub(crate) string: Option<CfgThemeSyntaxElem>,
+    pub(crate) number: Option<CfgThemeSyntaxElem>,
+}
+
+#[derive(Clone)]
+pub(crate) struct CfgThemeUI {
     // Textview
     pub(crate) textview_background_color: Color,
     pub(crate) textview_foreground_color: Color,
@@ -54,6 +68,12 @@ pub(crate) struct CfgTheme {
     pub(crate) fuzzy_bottom_offset: u32,
 }
 
+#[derive(Clone)]
+pub(crate) struct CfgTheme {
+    pub(crate) ui: CfgThemeUI,
+    pub(crate) syntax: CfgThemeSyntax,
+}
+
 impl CfgTheme {
     fn default(fc: &mut FontCore) -> CfgTheme {
         // Get default fixed and variable width fonts
@@ -62,7 +82,7 @@ impl CfgTheme {
             let variable_face = fc.find(VARIABLE_FONT).expect("failed to get sans font");
             (fixed_face, variable_face)
         };
-        CfgTheme {
+        let ui = CfgThemeUI {
             textview_background_color: Color::new(255, 255, 255, 255),
             textview_foreground_color: Color::new(96, 96, 96, 255),
             textview_cursor_color: Color::new(255, 128, 0, 196),
@@ -90,6 +110,11 @@ impl CfgTheme {
             fuzzy_edge_padding: 10,
             fuzzy_line_spacing: 2,
             fuzzy_bottom_offset: 10,
+        };
+        let syntax = CfgThemeSyntax::default();
+        CfgTheme {
+            ui: ui,
+            syntax: syntax,
         }
     }
 }
@@ -130,9 +155,11 @@ impl Cfg {
         // Parse themes
         let mut themes = HashMap::new();
         let yaml_themes = &yaml["themes"].as_hash()?;
-        for (key, val) in yaml_themes.iter() {
+        for (key, theme_val) in yaml_themes.iter() {
             let theme_name = key.as_str()?;
-            let theme = CfgTheme {
+            // Get UI theme
+            let val = &theme_val["ui"];
+            let ui = CfgThemeUI {
                 // Textview
                 textview_background_color: yaml_color(val, "textview_background_color")?,
                 textview_foreground_color: yaml_color(val, "textview_foreground_color")?,
@@ -164,6 +191,18 @@ impl Cfg {
                 fuzzy_line_spacing: val["fuzzy_line_spacing"].as_i64()? as u32,
                 fuzzy_bottom_offset: val["fuzzy_bottom_offset"].as_i64()? as u32,
             };
+            // Get syntax elements
+            let val = &theme_val["syntax"];
+            let syntax = CfgThemeSyntax {
+                comment: yaml_syntax_elem(&val["comment"]),
+                keyword: yaml_syntax_elem(&val["keyword"]),
+                string: yaml_syntax_elem(&val["string"]),
+                number: yaml_syntax_elem(&val["number"]),
+            };
+            let theme = CfgTheme {
+                ui: ui,
+                syntax: syntax,
+            };
             themes.insert(theme_name.to_owned(), theme);
         }
         // Get current theme
@@ -177,6 +216,24 @@ impl Cfg {
             None
         }
     }
+}
+
+fn yaml_syntax_elem(yaml: &Yaml) -> Option<CfgThemeSyntaxElem> {
+    let slant = yaml["text_slant"]
+        .as_str()
+        .and_then(|s| TextSlant::from_str(s))
+        .unwrap_or_default();
+    let weight = yaml["text_weight"]
+        .as_str()
+        .and_then(|s| TextWeight::from_str(s))
+        .unwrap_or_default();
+    yaml["foreground_color"]
+        .as_str()
+        .and_then(|s| Color::parse(s))
+        .map(|fgcol| CfgThemeSyntaxElem {
+            foreground_color: fgcol,
+            style: TextStyle::new(weight, slant),
+        })
 }
 
 fn yaml_textsize(yaml: &Yaml, elem: &str) -> Option<TextSize> {

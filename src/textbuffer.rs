@@ -2,7 +2,6 @@
 
 use std::cell::RefCell;
 use std::collections::HashMap;
-use std::fmt::Write as FmtWrite;
 use std::fs::File;
 use std::io::Result as IOResult;
 use std::rc::{Rc, Weak};
@@ -13,8 +12,9 @@ use unicode_segmentation::{GraphemeCursor, GraphemeIncomplete};
 
 use crate::config::{Cfg, CfgTheme};
 use crate::font::FontCore;
-use crate::types::{TextPitch, TextSlant, TextStyle, TextWeight, DPI};
-use crate::ui::text::{ShapedTextLine, TextLine, TextSpan};
+use crate::syntax::Syntax;
+use crate::types::DPI;
+use crate::ui::text::ShapedTextLine;
 
 /// A cursor into the buffer. The buffer maintains references to all cursors, so they are
 /// updated on editing the buffer
@@ -129,13 +129,13 @@ impl BufferPos {
 
 // Actual text storage
 pub(crate) struct Buffer {
-    fmtbuf: String,
     data: Rope,
     tabsize: usize,
     path: Option<String>,
     cursors: HashMap<usize, Weak<RefCell<BufferCursorInner>>>,
     font_core: Rc<RefCell<FontCore>>,
     theme: CfgTheme,
+    syntax: Syntax,
     dpi_shaped_lines: Vec<(Size2D<u32, DPI>, Vec<ShapedTextLine>, Vec<ShapedTextLine>)>,
 }
 
@@ -148,13 +148,13 @@ impl Buffer {
         config: &Cfg,
     ) -> Buffer {
         let mut ret = Buffer {
-            fmtbuf: String::new(),
             data: Rope::new(),
             cursors: HashMap::new(),
             path: None,
             tabsize: tabsize,
             dpi_shaped_lines: vec![(initial_dpi, Vec::new(), Vec::new())],
             theme: config.theme().clone(),
+            syntax: Syntax::Default,
             font_core: font_core,
         };
         ret.format_lines_from(0, None);
@@ -173,13 +173,13 @@ impl Buffer {
             .and_then(|f| Rope::from_reader(f))
             .map(|r| {
                 let mut ret = Buffer {
-                    fmtbuf: String::new(),
                     data: r,
                     cursors: HashMap::new(),
                     path: Some(path.to_owned()),
                     tabsize: tabsize,
                     dpi_shaped_lines: vec![(initial_dpi, Vec::new(), Vec::new())],
                     theme: config.theme().clone(),
+                    syntax: Syntax::from_path(path),
                     font_core: font_core,
                 };
                 ret.format_lines_from(0, None);
@@ -782,58 +782,17 @@ impl Buffer {
     fn format_lines_from(&mut self, start: usize, opt_min_end: Option<usize>) {
         let font_core = &mut *self.font_core.borrow_mut();
         for (dpi, lvec, tvec) in &mut self.dpi_shaped_lines {
-            for i in start..self.data.len_lines() {
-                let line = self.data.line(i);
-                expand_line(line, self.tabsize, &mut self.fmtbuf);
-                let fmtline = TextLine(vec![TextSpan::new(
-                    &self.fmtbuf,
-                    self.theme.textview_text_size,
-                    TextStyle::new(TextWeight::Medium, TextSlant::Roman),
-                    self.theme.textview_foreground_color,
-                    TextPitch::Fixed,
-                    None,
-                )]);
-                let shaped_line = ShapedTextLine::from_textline(
-                    fmtline,
-                    self.theme.textview_fixed_face,
-                    self.theme.textview_variable_face,
-                    font_core,
-                    *dpi,
-                );
-                if i >= tvec.len() {
-                    tvec.push(shaped_line);
-                } else if tvec[i] != shaped_line {
-                    tvec[i] = shaped_line;
-                } else {
-                    if let Some(min) = opt_min_end {
-                        if i < min {
-                            continue;
-                        }
-                    }
-                    break;
-                }
-            }
-            for linum in lvec.len()..(tvec.len() + 1) {
-                self.fmtbuf.clear();
-                write!(&mut self.fmtbuf, "{}", linum).unwrap();
-                let fmtspan = TextSpan::new(
-                    &self.fmtbuf,
-                    self.theme.gutter_text_size,
-                    TextStyle::new(TextWeight::Medium, TextSlant::Roman),
-                    self.theme.gutter_foreground_color,
-                    TextPitch::Fixed,
-                    None,
-                );
-                let shaped_line = ShapedTextLine::from_textstr(
-                    fmtspan,
-                    self.theme.gutter_fixed_face,
-                    self.theme.gutter_variable_face,
-                    font_core,
-                    *dpi,
-                );
-                lvec.push(shaped_line);
-            }
-            // lvec.truncate(tvec.len() + 1);
+            self.syntax.format_lines(
+                *dpi,
+                start,
+                opt_min_end,
+                self.data.slice(..),
+                &self.theme,
+                self.tabsize,
+                tvec,
+                lvec,
+                font_core,
+            );
         }
     }
 }
@@ -886,31 +845,6 @@ fn is_grapheme_boundary(slice: &RopeSlice, char_idx: usize) -> bool {
                 gc.provide_context(ctx_chunk, ctx_byte_start);
             }
             _ => unreachable!(),
-        }
-    }
-}
-
-fn expand_line(slice: RopeSlice, tabsize: usize, buf: &mut String) {
-    buf.clear();
-    let slice = trim_newlines(slice);
-    if slice.len_chars() == 0 {
-        buf.push(' ');
-    } else {
-        let mut x = 0;
-        for c in slice.chars() {
-            match c {
-                '\t' => {
-                    let next = (x / tabsize) * tabsize + tabsize;
-                    while x < next {
-                        x += 1;
-                        buf.push(' ');
-                    }
-                }
-                c => {
-                    buf.push(c);
-                    x += 1;
-                }
-            }
         }
     }
 }
