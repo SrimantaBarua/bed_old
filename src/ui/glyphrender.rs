@@ -1,9 +1,9 @@
 // (C) 2020 Srimanta Barua <srimanta.barua1@gmail.com>
 
-use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 
 use euclid::{point2, size2, Point2D, Rect, Size2D};
+use fnv::FnvHashMap;
 use guillotiere::{AllocId, AllocatorOptions, AtlasAllocator};
 
 use crate::font::{FaceKey, RasterFace};
@@ -78,7 +78,7 @@ impl RenderedGlyph {
 /// Handle to glyph renderer
 pub(super) struct GlyphRenderer {
     atlas: GlTexture<TexRed>,
-    glyph_map: HashMap<GlyphKey, Option<RenderedGlyph>>,
+    glyph_map: FnvHashMap<GlyphKey, Option<RenderedGlyph>>,
     dpi: Size2D<u32, DPI>,
     allocator: AtlasAllocator,
 }
@@ -93,7 +93,7 @@ impl GlyphRenderer {
         };
         GlyphRenderer {
             atlas: gl.new_texture(TexUnit::Texture0, size2(GL_TEX_SIZE, GL_TEX_SIZE)),
-            glyph_map: HashMap::new(),
+            glyph_map: FnvHashMap::default(),
             dpi: dpi,
             allocator: AtlasAllocator::with_options(
                 (GL_TEX_SIZE as i32, GL_TEX_SIZE as i32).into(),
@@ -121,7 +121,7 @@ impl GlyphRenderer {
 /// Handle to a glyph renderer with an activated texture
 pub(super) struct ActiveGlyphRenderer<'a, 'b> {
     atlas: &'a mut GlTexture<TexRed>,
-    glyph_map: &'a mut HashMap<GlyphKey, Option<RenderedGlyph>>,
+    glyph_map: &'a mut FnvHashMap<GlyphKey, Option<RenderedGlyph>>,
     dpi: Size2D<u32, DPI>,
     allocator: &'a mut AtlasAllocator,
     vert_buf: &'b mut ElemArr<TexColorQuad>,

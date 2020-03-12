@@ -4,6 +4,7 @@ use std::collections::HashMap;
 use std::ffi::CString;
 
 use euclid::Size2D;
+use fnv::FnvHashMap;
 
 use crate::types::{PixelSize, TextStyle};
 
@@ -51,14 +52,14 @@ impl Face {
 
 struct FaceFamily {
     name: String,
-    faces: HashMap<TextStyle, Face>,
+    faces: FnvHashMap<TextStyle, Face>,
 }
 
 impl FaceFamily {
     fn empty(name: String) -> FaceFamily {
         FaceFamily {
             name: name,
-            faces: HashMap::new(),
+            faces: FnvHashMap::default(),
         }
     }
 
@@ -86,7 +87,7 @@ impl FaceGroup {
 
 pub(crate) struct FontCore {
     path_face_map: HashMap<(CString, u32), FaceKey>,
-    key_face_map: HashMap<FaceKey, FaceGroup>,
+    key_face_map: FnvHashMap<FaceKey, FaceGroup>,
     next_key: u16,
     raster_core: RasterCore,
     hb_buffer: HbBuffer,
@@ -101,7 +102,7 @@ impl FontCore {
         Some(FontCore {
             source: source,
             path_face_map: HashMap::new(),
-            key_face_map: HashMap::new(),
+            key_face_map: FnvHashMap::default(),
             raster_core: raster_core,
             hb_buffer: hb_buffer,
             next_key: 0,
