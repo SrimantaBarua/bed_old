@@ -13,7 +13,7 @@ use crate::font::FontCore;
 use crate::types::{Color, PixelSize, TextPitch, TextStyle, DPI};
 
 use super::context::ActiveRenderCtx;
-use super::text::{ShapedTextLine, TextCursorStyle, TextSpan};
+use super::text::{ShapedTextLine, TextCursorStyle, TextLine, TextSpan};
 
 pub(super) struct FuzzyPopup {
     is_active: bool,
@@ -28,7 +28,7 @@ pub(super) struct FuzzyPopup {
     input_label_str: String,
     user_input: String,
     choices: Vec<String>,
-    filtered: Vec<(usize, String)>,
+    filtered: Vec<(usize, String, Vec<(usize, usize)>)>,
     select_idx: usize,
     default_on_empty: bool,
     cursor_bidx: usize,
@@ -313,8 +313,8 @@ impl FuzzyPopup {
         self.filtered.clear();
         self.select_idx = 0;
         for choice in &self.choices {
-            if let Some(score) = fuzzy_search(choice, &self.user_input) {
-                self.filtered.push((score, choice.to_owned()));
+            if let Some((score, indices)) = fuzzy_search(choice, &self.user_input) {
+                self.filtered.push((score, choice.to_owned(), indices));
             }
         }
         self.filtered.sort_by(|a, b| {
@@ -404,21 +404,54 @@ impl FuzzyPopup {
             + self.theme.fuzzy_line_spacing;
 
         let mut i = 0;
-        for (_, line) in &self.filtered {
+        for (_, line, indices) in &self.filtered {
+            let match_color = if i == self.select_idx {
+                self.theme.fuzzy_select_match_color
+            } else {
+                self.theme.fuzzy_match_color
+            };
             let color = if i == self.select_idx {
                 self.theme.fuzzy_select_color
             } else {
                 self.theme.fuzzy_foreground_color
             };
-            let fmtline = ShapedTextLine::from_textstr(
-                TextSpan::new(
-                    line,
+
+            let mut textline = TextLine::default();
+            let mut j = 0;
+            for (start, end) in indices {
+                if j < *start {
+                    textline.0.push(TextSpan::new(
+                        &line[j..*start],
+                        self.theme.fuzzy_text_size,
+                        TextStyle::default(),
+                        color,
+                        TextPitch::Variable,
+                        None,
+                    ));
+                }
+                textline.0.push(TextSpan::new(
+                    &line[*start..*end],
+                    self.theme.fuzzy_text_size,
+                    TextStyle::default(),
+                    match_color,
+                    TextPitch::Variable,
+                    None,
+                ));
+                j = *end;
+            }
+            if j < line.len() {
+                textline.0.push(TextSpan::new(
+                    &line[j..],
                     self.theme.fuzzy_text_size,
                     TextStyle::default(),
                     color,
                     TextPitch::Variable,
                     None,
-                ),
+                ));
+            }
+
+            let fmtline = ShapedTextLine::from_textline(
+                textline,
                 self.theme.fuzzy_face,
                 self.theme.fuzzy_face,
                 font_core,
@@ -460,23 +493,39 @@ fn bidx_to_gidx(s: &str, bidx: usize) -> usize {
     gidx
 }
 
-fn fuzzy_search(haystack: &str, needle: &str) -> Option<usize> {
+fn fuzzy_search(haystack: &str, needle: &str) -> Option<(usize, Vec<(usize, usize)>)> {
     let mut score = 0;
+    let mut indices = Vec::new();
     for split in needle.split_whitespace() {
         let mut hci = haystack.char_indices();
+        let mut start = None;
         for nc in split.chars() {
             let mut found = false;
             while let Some((i, hc)) = hci.next() {
                 if hc == nc {
                     score += i;
+                    if start.is_none() {
+                        start = Some(i);
+                    }
                     found = true;
                     break;
+                } else if start.is_some() {
+                    indices.push((start.unwrap(), i));
+                    start = None;
                 }
             }
             if !found {
                 return None;
             }
         }
+        if start.is_some() {
+            if let Some((i, _)) = hci.next() {
+                indices.push((start.unwrap(), i));
+            } else {
+                indices.push((start.unwrap(), haystack.len()));
+            }
+        }
     }
-    Some(score)
+    indices.sort_by(|a, b| a.0.cmp(&b.0));
+    Some((score, indices))
 }

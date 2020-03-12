@@ -134,36 +134,30 @@ impl Cfg {
             let theme_name = key.as_str()?;
             let theme = CfgTheme {
                 // Textview
-                textview_background_color: Color::parse(
-                    val["textview_background_color"].as_str()?,
-                )?,
-                textview_foreground_color: Color::parse(
-                    val["textview_foreground_color"].as_str()?,
-                )?,
-                textview_cursor_color: Color::parse(val["textview_cursor_color"].as_str()?)?,
-                textview_text_size: TextSize::from_f32(val["textview_text_size"].as_f64()? as f32),
-                textview_fixed_face: fc.find(val["textview_fixed_face"].as_str()?)?,
-                textview_variable_face: fc.find(val["textview_variable_face"].as_str()?)?,
+                textview_background_color: yaml_color(val, "textview_background_color")?,
+                textview_foreground_color: yaml_color(val, "textview_foreground_color")?,
+                textview_cursor_color: yaml_color(val, "textview_cursor_color")?,
+                textview_text_size: yaml_textsize(val, "textview_text_size")?,
+                textview_fixed_face: yaml_face(val, fc, "textview_fixed_face")?,
+                textview_variable_face: yaml_face(val, fc, "textview_variable_face")?,
                 // Gutter
-                gutter_background_color: Color::parse(val["gutter_background_color"].as_str()?)?,
-                gutter_foreground_color: Color::parse(val["gutter_foreground_color"].as_str()?)?,
-                gutter_text_size: TextSize::from_f32(val["gutter_text_size"].as_f64()? as f32),
-                gutter_fixed_face: fc.find(val["gutter_fixed_face"].as_str()?)?,
-                gutter_variable_face: fc.find(val["gutter_variable_face"].as_str()?)?,
+                gutter_background_color: yaml_color(val, "gutter_background_color")?,
+                gutter_foreground_color: yaml_color(val, "gutter_foreground_color")?,
+                gutter_text_size: yaml_textsize(val, "gutter_text_size")?,
+                gutter_fixed_face: yaml_face(val, fc, "gutter_fixed_face")?,
+                gutter_variable_face: yaml_face(val, fc, "gutter_variable_face")?,
                 gutter_padding: val["gutter_padding"].as_i64()? as u32,
                 // Prompt
-                fuzzy_background_color: Color::parse(val["fuzzy_background_color"].as_str()?)?,
-                fuzzy_foreground_color: Color::parse(val["fuzzy_foreground_color"].as_str()?)?,
-                fuzzy_label_color: Color::parse(val["fuzzy_label_color"].as_str()?)?,
-                fuzzy_match_color: Color::parse(val["fuzzy_match_color"].as_str()?)?,
-                fuzzy_select_color: Color::parse(val["fuzzy_select_color"].as_str()?)?,
-                fuzzy_select_match_color: Color::parse(val["fuzzy_select_match_color"].as_str()?)?,
-                fuzzy_select_background_color: Color::parse(
-                    val["fuzzy_select_background_color"].as_str()?,
-                )?,
-                fuzzy_cursor_color: Color::parse(val["fuzzy_cursor_color"].as_str()?)?,
-                fuzzy_text_size: TextSize::from_f32(val["fuzzy_text_size"].as_f64()? as f32),
-                fuzzy_face: fc.find(val["fuzzy_face"].as_str()?)?,
+                fuzzy_background_color: yaml_color(val, "fuzzy_background_color")?,
+                fuzzy_foreground_color: yaml_color(val, "fuzzy_foreground_color")?,
+                fuzzy_label_color: yaml_color(val, "fuzzy_label_color")?,
+                fuzzy_match_color: yaml_color(val, "fuzzy_match_color")?,
+                fuzzy_select_color: yaml_color(val, "fuzzy_select_color")?,
+                fuzzy_select_match_color: yaml_color(val, "fuzzy_select_match_color")?,
+                fuzzy_select_background_color: yaml_color(val, "fuzzy_select_background_color")?,
+                fuzzy_cursor_color: yaml_color(val, "fuzzy_cursor_color")?,
+                fuzzy_text_size: yaml_textsize(val, "fuzzy_text_size")?,
+                fuzzy_face: yaml_face(val, fc, "fuzzy_face")?,
                 fuzzy_max_height_percentage: val["fuzzy_max_height_percentage"].as_i64()? as u32,
                 fuzzy_width_percentage: val["fuzzy_width_percentage"].as_i64()? as u32,
                 fuzzy_edge_padding: val["fuzzy_edge_padding"].as_i64()? as u32,
@@ -183,4 +177,22 @@ impl Cfg {
             None
         }
     }
+}
+
+fn yaml_textsize(yaml: &Yaml, elem: &str) -> Option<TextSize> {
+    yaml[elem].as_f64().map(|f| TextSize::from_f32(f as f32))
+}
+
+fn yaml_color(yaml: &Yaml, elem: &str) -> Option<Color> {
+    yaml[elem].as_str().and_then(|s| Color::parse(s))
+}
+
+fn yaml_face(yaml: &Yaml, font_core: &mut FontCore, elem: &str) -> Option<FaceKey> {
+    let faces = yaml[elem].as_str()?;
+    for face_name in faces.split(',') {
+        if let Some(key) = font_core.find(face_name) {
+            return Some(key);
+        }
+    }
+    None
 }
