@@ -343,7 +343,16 @@ impl Window {
 
                         let (tx, rx) = channel();
                         thread::spawn(move || {
-                            for e in WalkDir::new(&wdir).into_iter().filter_map(|e| e.ok()) {
+                            for e in WalkDir::new(&wdir)
+                                .into_iter()
+                                .filter_entry(|e| {
+                                    e.file_name()
+                                        .to_str()
+                                        .map(|s| !s.starts_with("."))
+                                        .unwrap_or(true)
+                                })
+                                .filter_map(|e| e.ok())
+                            {
                                 let mut path = e.path();
                                 if path.is_file() {
                                     path = path.strip_prefix(&wdir).unwrap();
