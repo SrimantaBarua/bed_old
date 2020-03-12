@@ -6,11 +6,12 @@ use std::rc::Rc;
 
 use euclid::{point2, size2, Rect, Size2D};
 
+use crate::config::{Cfg, CfgTheme};
+use crate::font::FontCore;
 use crate::textbuffer::{Buffer, BufferCursor};
-use crate::types::{Color, PixelSize, TextSize, DPI};
+use crate::types::{PixelSize, DPI};
 
 use super::context::ActiveRenderCtx;
-use super::font::{FaceKey, FontCore};
 use super::text::{ShapedTextLine, TextCursorStyle};
 
 struct View {
@@ -27,17 +28,11 @@ pub(super) struct TextView {
     views: Vec<View>,
     cur_view_idx: usize,
     rect: Rect<u32, PixelSize>,
-    background_color: Color,
-    fixed_face: FaceKey,
-    variable_face: FaceKey,
-    gutter_padding: u32,
-    gutter_textsize: TextSize,
-    gutter_background_color: Color,
     line_numbers: bool,
     relative_number: bool,
     dpi: Size2D<u32, DPI>,
     font_core: Rc<RefCell<FontCore>>,
-    cursor_color: Color,
+    theme: CfgTheme,
     cursor_style: TextCursorStyle,
 }
 
@@ -45,17 +40,11 @@ impl TextView {
     pub(super) fn new(
         buffer: Rc<RefCell<Buffer>>,
         rect: Rect<u32, PixelSize>,
-        background_color: Color,
-        fixed_face: FaceKey,
-        variable_face: FaceKey,
         font_core: Rc<RefCell<FontCore>>,
+        config: &Cfg,
         dpi: Size2D<u32, DPI>,
         line_numbers: bool,
         relative_number: bool,
-        gutter_padding: u32,
-        gutter_textsize: TextSize,
-        gutter_background_color: Color,
-        cursor_color: Color,
         view_id: usize,
     ) -> TextView {
         let cursor = {
@@ -76,18 +65,12 @@ impl TextView {
             views: views,
             cur_view_idx: 0,
             rect: rect,
-            background_color: background_color,
-            fixed_face: fixed_face,
-            variable_face: variable_face,
             font_core: font_core,
             dpi: dpi,
             line_numbers: line_numbers,
             relative_number: relative_number,
-            gutter_padding: gutter_padding,
-            gutter_textsize: gutter_textsize,
-            gutter_background_color: gutter_background_color,
-            cursor_color: cursor_color,
             cursor_style: TextCursorStyle::Block,
+            theme: config.theme().clone(),
         }
     }
 
@@ -157,9 +140,9 @@ impl TextView {
             }
 
             let gutter_width = if view.line_numbers || view.relative_number {
-                shaped_linums[shaped_linums.len() - 1].metrics.width + self.gutter_padding * 2
+                shaped_linums[shaped_linums.len() - 1].metrics.width + self.theme.gutter_padding * 2
             } else {
-                self.gutter_padding * 2
+                self.theme.gutter_padding * 2
             };
 
             point.0 += view.xbase as i32 - gutter_width as i32;
@@ -543,9 +526,9 @@ impl TextView {
         let (shaped_linums, shaped_text) = buffer.shaped_data(self.dpi).unwrap();
 
         let gutter_width = if view.line_numbers || view.relative_number {
-            shaped_linums[shaped_linums.len() - 1].metrics.width + self.gutter_padding * 2
+            shaped_linums[shaped_linums.len() - 1].metrics.width + self.theme.gutter_padding * 2
         } else {
-            self.gutter_padding * 2
+            self.theme.gutter_padding * 2
         };
 
         let mut textview_rect = self.rect.cast();
@@ -555,7 +538,8 @@ impl TextView {
         let mut pos = point2(-(view.xbase as i32), -(view.ybase as i32));
         {
             let mut linum = start_line;
-            let mut ctx = actx.get_widget_context(textview_rect, self.background_color);
+            let mut ctx =
+                actx.get_widget_context(textview_rect, self.theme.textview_background_color);
             for (ascender, _, height, line, _) in LinumTextIter::new(
                 shaped_linums,
                 shaped_text,
@@ -574,7 +558,7 @@ impl TextView {
                     Some((
                         view.cursor.line_gidx(),
                         self.cursor_style,
-                        self.cursor_color,
+                        self.theme.textview_cursor_color,
                     ))
                 } else {
                     None
@@ -592,12 +576,12 @@ impl TextView {
         }
 
         pos = point2(
-            (gutter_width - self.gutter_padding) as i32,
+            (gutter_width - self.theme.gutter_padding) as i32,
             -(view.ybase as i32),
         );
         {
             let mut linum = start_line;
-            let mut ctx = actx.get_widget_context(rect, self.gutter_background_color);
+            let mut ctx = actx.get_widget_context(rect, self.theme.gutter_background_color);
             if view.line_numbers || view.relative_number {
                 for (ascender, _, height, _, gline) in LinumTextIter::new(
                     shaped_linums,
@@ -616,7 +600,7 @@ impl TextView {
                     baseline.y += ascender;
                     baseline.x -= gline.metrics.width as i32;
                     if view.line_numbers && view.relative_number && linum == cursor_linum {
-                        baseline.x = self.gutter_padding as i32;
+                        baseline.x = self.theme.gutter_padding as i32;
                     }
                     gline.draw(&mut ctx, ascender, height, baseline, font_core, None);
                     pos.y += height;
@@ -653,9 +637,9 @@ impl TextView {
         let (shaped_linums, shaped_text) = buffer.shaped_data(self.dpi).unwrap();
 
         let gutter_width = if view.line_numbers || view.relative_number {
-            shaped_linums[shaped_linums.len() - 1].metrics.width + self.gutter_padding * 2
+            shaped_linums[shaped_linums.len() - 1].metrics.width + self.theme.gutter_padding * 2
         } else {
-            self.gutter_padding * 2
+            self.theme.gutter_padding * 2
         };
 
         // Snap to y

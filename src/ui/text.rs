@@ -8,7 +8,7 @@ use unicode_segmentation::UnicodeSegmentation;
 use crate::types::{Color, PixelSize, TextPitch, TextSize, TextStyle, DPI};
 
 use super::context::WidgetRenderCtx;
-use super::font::{harfbuzz, FaceKey, FontCore, ScaledFaceMetrics};
+use crate::font::{harfbuzz, FaceKey, FontCore, ScaledFaceMetrics};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum TextCursorStyle {

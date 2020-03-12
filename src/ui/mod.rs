@@ -9,7 +9,6 @@ use glfw::{Glfw, OpenGlProfileHint, WindowEvent, WindowHint};
 use crate::core::Core;
 
 mod context;
-pub(crate) mod font;
 mod fuzzy_popup;
 mod glyphrender;
 mod opengl;
@@ -18,29 +17,23 @@ pub(crate) mod text;
 mod textview;
 mod window;
 
-use font::FontCore;
+use crate::config::Cfg;
+use crate::font::FontCore;
 use window::Window;
-
-#[cfg(target_os = "linux")]
-const FIXED_FONT: &'static str = "monospace";
-#[cfg(target_os = "windows")]
-const FIXED_FONT: &'static str = "Consolas";
-
-#[cfg(target_os = "linux")]
-const VARIABLE_FONT: &'static str = "sans";
-#[cfg(target_os = "windows")]
-const VARIABLE_FONT: &'static str = "Arial";
 
 #[derive(Clone)]
 pub(crate) struct UICore {
     glfw: Rc<RefCell<Glfw>>,
     core: Rc<RefCell<Core>>,
     font_core: Rc<RefCell<FontCore>>,
+    config: Rc<RefCell<Cfg>>,
 }
 
 impl UICore {
     pub(crate) fn init(
         args: clap::ArgMatches,
+        font_core: Rc<RefCell<FontCore>>,
+        config: Rc<RefCell<Cfg>>,
         width: u32,
         height: u32,
         title: &str,
@@ -50,32 +43,21 @@ impl UICore {
         glfw.window_hint(WindowHint::Visible(false));
         glfw.window_hint(WindowHint::ContextVersion(3, 3));
         glfw.window_hint(WindowHint::OpenGlProfile(OpenGlProfileHint::Core));
-        // Initialize fonts
-        let font_core = Rc::new(RefCell::new(
-            FontCore::new().expect("failed to initialize font core"),
-        ));
-        // Get default fixed and variable width fonts
-        let (fixed_face, variable_face) = {
-            let fc = &mut *font_core.borrow_mut();
-            let fixed_face = fc.find(FIXED_FONT).expect("failed to get monospace font");
-            let variable_face = fc.find(VARIABLE_FONT).expect("failed to get sans font");
-            (fixed_face, variable_face)
-        };
         // Initialize editor core
-        let core = Core::new(fixed_face, variable_face, font_core.clone());
+        let core = Core::new(font_core.clone(), config.clone());
         let first_buffer_path = args.value_of("FILE");
         // Create core and first window
         let ui_core = UICore {
             glfw: Rc::new(RefCell::new(glfw)),
             core: Rc::new(RefCell::new(core)),
             font_core: font_core,
+            config: config,
         };
         let (window, events) = Window::first_window(
             ui_core.glfw.clone(),
             ui_core.core.clone(),
             ui_core.font_core.clone(),
-            fixed_face,
-            variable_face,
+            &*ui_core.config.borrow(),
             first_buffer_path,
             width,
             height,

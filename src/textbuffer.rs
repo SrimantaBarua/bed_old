@@ -11,14 +11,10 @@ use euclid::Size2D;
 use ropey::{iter::Chunks, str_utils::byte_to_char_idx, Rope, RopeSlice};
 use unicode_segmentation::{GraphemeCursor, GraphemeIncomplete};
 
-use crate::types::{Color, TextPitch, TextSize, TextSlant, TextStyle, TextWeight, DPI};
-use crate::ui::font::{FaceKey, FontCore};
+use crate::config::{Cfg, CfgTheme};
+use crate::font::FontCore;
+use crate::types::{TextPitch, TextSlant, TextStyle, TextWeight, DPI};
 use crate::ui::text::{ShapedTextLine, TextLine, TextSpan};
-
-static GUTTER_FG_COLOR: Color = Color::new(196, 196, 196, 255);
-static GUTTER_TEXT_SIZE: f32 = 7.0;
-static TEXT_FG_COLOR: Color = Color::new(96, 96, 96, 255);
-static TEXT_SIZE: f32 = 8.0;
 
 /// A cursor into the buffer. The buffer maintains references to all cursors, so they are
 /// updated on editing the buffer
@@ -138,9 +134,8 @@ pub(crate) struct Buffer {
     tabsize: usize,
     path: Option<String>,
     cursors: HashMap<usize, Weak<RefCell<BufferCursorInner>>>,
-    fixed_face: FaceKey,
-    variable_face: FaceKey,
     font_core: Rc<RefCell<FontCore>>,
+    theme: CfgTheme,
     dpi_shaped_lines: Vec<(Size2D<u32, DPI>, Vec<ShapedTextLine>, Vec<ShapedTextLine>)>,
 }
 
@@ -149,9 +144,8 @@ impl Buffer {
     pub(crate) fn empty(
         tabsize: usize,
         initial_dpi: Size2D<u32, DPI>,
-        fixed_face: FaceKey,
-        variable_face: FaceKey,
         font_core: Rc<RefCell<FontCore>>,
+        config: &Cfg,
     ) -> Buffer {
         let mut ret = Buffer {
             fmtbuf: String::new(),
@@ -160,8 +154,7 @@ impl Buffer {
             path: None,
             tabsize: tabsize,
             dpi_shaped_lines: vec![(initial_dpi, Vec::new(), Vec::new())],
-            fixed_face: fixed_face,
-            variable_face: variable_face,
+            theme: config.theme().clone(),
             font_core: font_core,
         };
         ret.format_lines_from(0, None);
@@ -173,9 +166,8 @@ impl Buffer {
         path: &str,
         tabsize: usize,
         initial_dpi: Size2D<u32, DPI>,
-        fixed_face: FaceKey,
-        variable_face: FaceKey,
         font_core: Rc<RefCell<FontCore>>,
+        config: &Cfg,
     ) -> IOResult<Buffer> {
         File::open(path)
             .and_then(|f| Rope::from_reader(f))
@@ -187,8 +179,7 @@ impl Buffer {
                     path: Some(path.to_owned()),
                     tabsize: tabsize,
                     dpi_shaped_lines: vec![(initial_dpi, Vec::new(), Vec::new())],
-                    fixed_face: fixed_face,
-                    variable_face: variable_face,
+                    theme: config.theme().clone(),
                     font_core: font_core,
                 };
                 ret.format_lines_from(0, None);
@@ -796,16 +787,16 @@ impl Buffer {
                 expand_line(line, self.tabsize, &mut self.fmtbuf);
                 let fmtline = TextLine(vec![TextSpan::new(
                     &self.fmtbuf,
-                    TextSize::from_f32(TEXT_SIZE),
+                    self.theme.textview_text_size,
                     TextStyle::new(TextWeight::Medium, TextSlant::Roman),
-                    TEXT_FG_COLOR,
+                    self.theme.textview_foreground_color,
                     TextPitch::Fixed,
                     None,
                 )]);
                 let shaped_line = ShapedTextLine::from_textline(
                     fmtline,
-                    self.fixed_face,
-                    self.variable_face,
+                    self.theme.textview_fixed_face,
+                    self.theme.textview_variable_face,
                     font_core,
                     *dpi,
                 );
@@ -827,16 +818,16 @@ impl Buffer {
                 write!(&mut self.fmtbuf, "{}", linum).unwrap();
                 let fmtspan = TextSpan::new(
                     &self.fmtbuf,
-                    TextSize::from_f32(GUTTER_TEXT_SIZE),
+                    self.theme.gutter_text_size,
                     TextStyle::new(TextWeight::Medium, TextSlant::Roman),
-                    GUTTER_FG_COLOR,
+                    self.theme.gutter_foreground_color,
                     TextPitch::Fixed,
                     None,
                 );
                 let shaped_line = ShapedTextLine::from_textstr(
                     fmtspan,
-                    self.fixed_face,
-                    self.variable_face,
+                    self.theme.gutter_fixed_face,
+                    self.theme.gutter_variable_face,
                     font_core,
                     *dpi,
                 );

@@ -16,6 +16,7 @@ harfbuzz-sys = "0.3.4"
 freetype = "0.4.1"
 guillotiere = "0.4.3"
 walkdir = "2.3.1"
+yaml-rust = "0.4.3"
 
 [target.'cfg(unix)'.dependencies]
 servo-fontconfig = "0.4"

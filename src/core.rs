@@ -7,32 +7,27 @@ use std::rc::Rc;
 
 use euclid::Size2D;
 
+use crate::config::Cfg;
+use crate::font::FontCore;
 use crate::textbuffer::Buffer;
 use crate::types::DPI;
-use crate::ui::font::{FaceKey, FontCore};
 
 const TABSIZE: usize = 8;
 
 pub(crate) struct Core {
     buffers: HashMap<String, Rc<RefCell<Buffer>>>,
-    fixed_face: FaceKey,
-    variable_face: FaceKey,
     font_core: Rc<RefCell<FontCore>>,
+    config: Rc<RefCell<Cfg>>,
     next_view_id: usize,
 }
 
 impl Core {
-    pub(crate) fn new(
-        fixed_face: FaceKey,
-        variable_face: FaceKey,
-        font_core: Rc<RefCell<FontCore>>,
-    ) -> Core {
+    pub(crate) fn new(font_core: Rc<RefCell<FontCore>>, config: Rc<RefCell<Cfg>>) -> Core {
         Core {
             buffers: HashMap::new(),
             next_view_id: 0,
-            fixed_face: fixed_face,
-            variable_face: variable_face,
             font_core: font_core,
+            config: config,
         }
     }
 
@@ -40,9 +35,8 @@ impl Core {
         Rc::new(RefCell::new(Buffer::empty(
             TABSIZE,
             dpi,
-            self.fixed_face,
-            self.variable_face,
             self.font_core.clone(),
+            &*self.config.borrow(),
         )))
     }
 
@@ -62,9 +56,8 @@ impl Core {
                 path,
                 TABSIZE,
                 dpi,
-                self.fixed_face,
-                self.variable_face,
                 self.font_core.clone(),
+                &*self.config.borrow(),
             )
             .map(|b| Rc::new(RefCell::new(b)))?;
             self.buffers.insert(path.to_owned(), buffer.clone());

@@ -13,26 +13,17 @@ use euclid::{point2, size2, Rect, Size2D};
 use glfw::{Action, Context, Glfw, Key, Modifiers, WindowEvent, WindowMode};
 use walkdir::WalkDir;
 
+use crate::config::Cfg;
 use crate::core::Core;
-use crate::types::{Color, PixelSize, TextSize};
+use crate::types::{Color, PixelSize};
 
 use super::context::RenderCtx;
-use super::font::{FaceKey, FontCore};
 use super::fuzzy_popup::FuzzyPopup;
 use super::text::TextCursorStyle;
 use super::textview::TextView;
+use crate::font::FontCore;
 
-static GUTTER_PADDING: u32 = 10;
-static GUTTER_TEXTSIZE: f32 = 7.0;
-static GUTTER_BG_COLOR: Color = Color::new(255, 255, 255, 255);
-static TEXTVIEW_BG_COLOR: Color = Color::new(255, 255, 255, 255);
 static CLEAR_COLOR: Color = Color::new(255, 255, 255, 255);
-static CURSOR_COLOR: Color = Color::new(255, 128, 0, 196);
-static FUZZY_BG_COLOR: Color = Color::new(255, 255, 255, 255);
-static FUZZY_FG_COLOR: Color = Color::new(144, 144, 144, 255);
-static FUZZY_LABEL_COLOR: Color = Color::new(96, 96, 96, 255);
-static FUZZY_SELECT_COLOR: Color = Color::new(255, 100, 0, 255);
-static FUZZY_TEXT_SIZE: f32 = 8.0;
 
 static COMMANDS: [&'static str; 8] = [
     "quit",
@@ -66,8 +57,6 @@ pub(crate) struct Window {
     render_ctx: RenderCtx,
     glfw: Rc<RefCell<Glfw>>,
     core: Rc<RefCell<Core>>,
-    fixed_face: FaceKey,
-    variable_face: FaceKey,
     textview: TextView,
     fuzzy_popup: FuzzyPopup,
     textview_scroll_v: (f64, f64),
@@ -82,8 +71,7 @@ impl Window {
         glfw: Rc<RefCell<Glfw>>,
         core: Rc<RefCell<Core>>,
         font_core: Rc<RefCell<FontCore>>,
-        fixed_face: FaceKey,
-        variable_face: FaceKey,
+        config: &Cfg,
         first_buffer_path: Option<&str>,
         width: u32,
         height: u32,
@@ -151,37 +139,15 @@ impl Window {
         let textview = TextView::new(
             buffer,
             inner_rect,
-            TEXTVIEW_BG_COLOR,
-            fixed_face,
-            variable_face,
             font_core.clone(),
+            config,
             dpi,
             true,
             false,
-            GUTTER_PADDING,
-            TextSize::from_f32(GUTTER_TEXTSIZE),
-            GUTTER_BG_COLOR,
-            CURSOR_COLOR,
             view_id,
         );
         // Initialize fuzzy search popup
-        let fuzzy_popup = FuzzyPopup::new(
-            inner_rect,
-            40,
-            90,
-            10,
-            10,
-            2,
-            FUZZY_BG_COLOR,
-            FUZZY_FG_COLOR,
-            FUZZY_LABEL_COLOR,
-            FUZZY_SELECT_COLOR,
-            CURSOR_COLOR,
-            TextSize::from_f32(FUZZY_TEXT_SIZE),
-            variable_face,
-            font_core.clone(),
-            dpi,
-        );
+        let fuzzy_popup = FuzzyPopup::new(inner_rect, font_core.clone(), config, dpi);
         // Make window visible
         window.show();
         // Return window wrapper
@@ -192,8 +158,6 @@ impl Window {
                 render_ctx: ctx,
                 glfw: glfw,
                 core: core,
-                fixed_face: fixed_face,
-                variable_face: variable_face,
                 textview: textview,
                 fuzzy_popup: fuzzy_popup,
                 textview_scroll_v: (0.0, 0.0),

@@ -15,7 +15,7 @@ use harfbuzz_sys::{
     hb_glyph_info_t, hb_glyph_position_t, hb_shape, HB_BUFFER_CONTENT_TYPE_UNICODE,
 };
 
-pub(in crate::ui) fn shape<'a>(font: &HbFont, buf: &'a mut HbBuffer) -> GlyphInfoIter<'a> {
+pub(crate) fn shape<'a>(font: &HbFont, buf: &'a mut HbBuffer) -> GlyphInfoIter<'a> {
     unsafe {
         hb_shape(font.raw, buf.raw, std::ptr::null(), 0);
     }
@@ -23,14 +23,14 @@ pub(in crate::ui) fn shape<'a>(font: &HbFont, buf: &'a mut HbBuffer) -> GlyphInf
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(in crate::ui) struct GlyphInfo {
-    pub(in crate::ui) gid: u32,
-    pub(in crate::ui) cluster: u32,
-    pub(in crate::ui) advance: Size2D<i32, PixelSize>,
-    pub(in crate::ui) offset: Size2D<i32, PixelSize>,
+pub(crate) struct GlyphInfo {
+    pub(crate) gid: u32,
+    pub(crate) cluster: u32,
+    pub(crate) advance: Size2D<i32, PixelSize>,
+    pub(crate) offset: Size2D<i32, PixelSize>,
 }
 
-pub(in crate::ui) struct GlyphInfoIter<'a> {
+pub(crate) struct GlyphInfoIter<'a> {
     info: &'a [hb_glyph_info_t],
     pos: &'a [hb_glyph_position_t],
     i: usize,
@@ -60,12 +60,12 @@ impl<'a> Iterator for GlyphInfoIter<'a> {
     }
 }
 
-pub(in crate::ui) struct HbBuffer {
+pub(crate) struct HbBuffer {
     raw: *mut hb_buffer_t,
 }
 
 impl HbBuffer {
-    pub(in crate::ui) fn new() -> Option<HbBuffer> {
+    pub(super) fn new() -> Option<HbBuffer> {
         let ptr = unsafe { hb_buffer_create() };
         if ptr.is_null() {
             None
@@ -74,15 +74,15 @@ impl HbBuffer {
         }
     }
 
-    pub(in crate::ui) fn clear_contents(&mut self) {
+    pub(crate) fn clear_contents(&mut self) {
         unsafe { hb_buffer_clear_contents(self.raw) }
     }
 
-    pub(in crate::ui) fn guess_segment_properties(&mut self) {
+    pub(crate) fn guess_segment_properties(&mut self) {
         unsafe { hb_buffer_guess_segment_properties(self.raw) }
     }
 
-    pub(in crate::ui) fn add(&mut self, codepoint: char, cluster: u32) {
+    pub(crate) fn add(&mut self, codepoint: char, cluster: u32) {
         unsafe {
             hb_buffer_add(self.raw, codepoint as u32, cluster);
             hb_buffer_set_content_type(self.raw, HB_BUFFER_CONTENT_TYPE_UNICODE);
@@ -115,7 +115,7 @@ impl std::ops::Drop for HbBuffer {
     }
 }
 
-pub(in crate::ui) struct HbFont {
+pub(crate) struct HbFont {
     raw: *mut hb_font_t,
 }
 
@@ -126,7 +126,7 @@ impl std::ops::Drop for HbFont {
 }
 
 impl HbFont {
-    pub(in crate::ui) fn new(path: &CStr, idx: u32) -> Option<HbFont> {
+    pub(crate) fn new(path: &CStr, idx: u32) -> Option<HbFont> {
         let blob = HbBlob::from_file(path)?;
         unsafe {
             let face = hb_face_create(blob.raw, idx);
@@ -142,7 +142,7 @@ impl HbFont {
         }
     }
 
-    pub(in crate::ui) fn set_scale(&mut self, size: TextSize, dpi: Size2D<u32, DPI>) {
+    pub(crate) fn set_scale(&mut self, size: TextSize, dpi: Size2D<u32, DPI>) {
         let scale = size.to_pixel_size(dpi);
         unsafe {
             hb_font_set_scale(

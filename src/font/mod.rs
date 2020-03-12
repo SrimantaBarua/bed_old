@@ -8,7 +8,7 @@ use euclid::Size2D;
 use crate::types::{PixelSize, TextStyle};
 
 mod freetype;
-pub(in crate::ui) mod harfbuzz;
+pub(crate) mod harfbuzz;
 
 #[cfg(target_os = "windows")]
 mod direct_write;
@@ -21,21 +21,21 @@ mod fontconfig;
 use self::fontconfig as source;
 
 use self::freetype::RasterCore;
-pub(in crate::ui) use self::freetype::RasterFace;
+pub(crate) use self::freetype::RasterFace;
 use self::harfbuzz::{HbBuffer, HbFont};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
 pub(crate) struct FaceKey(u16);
 
 impl FaceKey {
-    pub(in crate::ui) fn ival(self) -> u16 {
+    pub(crate) fn ival(self) -> u16 {
         self.0
     }
 }
 
-pub(in crate::ui) struct Face {
-    pub(in crate::ui) raster: RasterFace,
-    pub(in crate::ui) shaper: HbFont,
+pub(crate) struct Face {
+    pub(crate) raster: RasterFace,
+    pub(crate) shaper: HbFont,
 }
 
 impl Face {
@@ -68,7 +68,7 @@ impl FaceFamily {
     }
 }
 
-pub(in crate::ui) struct FaceGroup {
+pub(crate) struct FaceGroup {
     family: FaceFamily,
     fallbacks: Vec<FaceKey>,
 }
@@ -94,7 +94,7 @@ pub(crate) struct FontCore {
 }
 
 impl FontCore {
-    pub(in crate::ui) fn new() -> Option<FontCore> {
+    pub(crate) fn new() -> Option<FontCore> {
         let source = source::FontSource::new()?;
         let raster_core = RasterCore::new()?;
         let hb_buffer = HbBuffer::new()?;
@@ -108,7 +108,7 @@ impl FontCore {
         })
     }
 
-    pub(in crate::ui) fn find(&mut self, family: &str) -> Option<FaceKey> {
+    pub(crate) fn find(&mut self, family: &str) -> Option<FaceKey> {
         let default_style = TextStyle::default();
         for (key, group) in self.key_face_map.iter() {
             if group.family.name == family {
@@ -144,7 +144,7 @@ impl FontCore {
         }
     }
 
-    pub(in crate::ui) fn find_for_char(&mut self, base: FaceKey, c: char) -> Option<FaceKey> {
+    pub(crate) fn find_for_char(&mut self, base: FaceKey, c: char) -> Option<FaceKey> {
         let default_style = TextStyle::default();
 
         let group = self.key_face_map.get(&base)?;
@@ -187,7 +187,7 @@ impl FontCore {
         Some(key)
     }
 
-    pub(in crate::ui) fn get(
+    pub(crate) fn get(
         &mut self,
         key: FaceKey,
         style: TextStyle,
@@ -211,17 +211,17 @@ impl FontCore {
 }
 
 #[derive(Clone)]
-pub(in crate::ui) struct RasterizedGlyph<'a> {
-    pub(in crate::ui) size: Size2D<u32, PixelSize>,
-    pub(in crate::ui) bearing: Size2D<i32, PixelSize>,
-    pub(in crate::ui) buffer: &'a [u8],
+pub(crate) struct RasterizedGlyph<'a> {
+    pub(crate) size: Size2D<u32, PixelSize>,
+    pub(crate) bearing: Size2D<i32, PixelSize>,
+    pub(crate) buffer: &'a [u8],
 }
 
 #[derive(Clone, Debug, Copy, Eq, PartialEq)]
-pub(in crate::ui) struct ScaledFaceMetrics {
-    pub(in crate::ui) ascender: i32,
-    pub(in crate::ui) descender: i32,
-    pub(in crate::ui) advance_width: i32,
-    pub(in crate::ui) underline_pos: i32,
-    pub(in crate::ui) underline_thickness: i32,
+pub(crate) struct ScaledFaceMetrics {
+    pub(crate) ascender: i32,
+    pub(crate) descender: i32,
+    pub(crate) advance_width: i32,
+    pub(crate) underline_pos: i32,
+    pub(crate) underline_thickness: i32,
 }

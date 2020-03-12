@@ -1,8 +1,12 @@
 // (C) 2020 Srimanta Barua <srimanta.barua1@gmail.com>
 
+use std::cell::RefCell;
+use std::rc::Rc;
 use std::time;
 
+mod config;
 mod core;
+mod font;
 mod textbuffer;
 mod types;
 mod ui;
@@ -14,7 +18,17 @@ const TITLE: &str = "bed";
 fn main() {
     let args = parse_args();
 
-    let (mut ui_core, window, events) = ui::UICore::init(args, WIDTH, HEIGHT, TITLE);
+    // Initialize fonts
+    let font_core = Rc::new(RefCell::new(
+        font::FontCore::new().expect("failed to initialize font core"),
+    ));
+    let config = {
+        let fc = &mut *font_core.borrow_mut();
+        Rc::new(RefCell::new(config::Cfg::load(fc)))
+    };
+
+    let (mut ui_core, window, events) =
+        ui::UICore::init(args, font_core, config, WIDTH, HEIGHT, TITLE);
     let mut windows = vec![(window, events, time::Instant::now())];
 
     let target_duration = time::Duration::from_nanos(1_000_000_000 / 60).as_secs_f64();

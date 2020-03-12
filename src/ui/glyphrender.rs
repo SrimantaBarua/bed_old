@@ -6,10 +6,11 @@ use std::hash::{Hash, Hasher};
 use euclid::{point2, size2, Point2D, Rect, Size2D};
 use guillotiere::{AllocId, AllocatorOptions, AtlasAllocator};
 
-use super::font::{FaceKey, RasterFace};
+use crate::font::{FaceKey, RasterFace};
+use crate::types::{Color, PixelSize, TextSize, TextStyle, DPI};
+
 use super::opengl::{ActiveShaderProgram, ElemArr, Gl, GlTexture, TexRed, TexUnit};
 use super::quad::TexColorQuad;
-use crate::types::{Color, PixelSize, TextSize, TextStyle, DPI};
 
 const GL_TEX_SIZE: u32 = 4096;
 

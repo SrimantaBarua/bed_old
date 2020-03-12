@@ -64,7 +64,7 @@ impl RasterCore {
     }
 }
 
-pub(in crate::ui) struct RasterFace {
+pub(crate) struct RasterFace {
     face: FT_Face,
 }
 
@@ -75,7 +75,7 @@ impl std::ops::Drop for RasterFace {
 }
 
 impl RasterFace {
-    pub(in crate::ui) fn raster(
+    pub(crate) fn raster(
         &mut self,
         gid: u32,
         size: TextSize,
@@ -109,7 +109,7 @@ impl RasterFace {
         }
     }
 
-    pub(in crate::ui) fn get_metrics(
+    pub(crate) fn get_metrics(
         &mut self,
         size: TextSize,
         dpi: Size2D<u32, DPI>,
@@ -134,12 +134,12 @@ impl RasterFace {
     }
 
     #[cfg(target_os = "windows")]
-    pub(in crate::ui) fn has_glyph_for_char(&self, c: char) -> bool {
+    pub(crate) fn has_glyph_for_char(&self, c: char) -> bool {
         unsafe { FT_Get_Char_Index(self.face, c as u32) != 0 }
     }
 
     #[cfg(not(target_os = "windows"))]
-    pub(in crate::ui) fn has_glyph_for_char(&self, c: char) -> bool {
+    pub(crate) fn has_glyph_for_char(&self, c: char) -> bool {
         unsafe { FT_Get_Char_Index(self.face, c as u64) != 0 }
     }
 

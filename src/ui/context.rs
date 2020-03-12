@@ -6,10 +6,10 @@ use std::ops::Drop;
 use euclid::{point2, Point2D, Rect, SideOffsets2D, Size2D};
 use glfw::Context;
 
-use super::font::{FaceKey, RasterFace};
 use super::glyphrender::{ActiveGlyphRenderer, GlyphRenderer};
 use super::opengl::{ElemArr, Framebuffer, Gl, Mat4, ShaderProgram, TexUnit};
 use super::quad::{ColorQuad, TexColorQuad, TexQuad};
+use crate::font::{FaceKey, RasterFace};
 use crate::types::{Color, PixelSize, TextSize, TextStyle, DPI};
 
 pub(super) struct RenderCtx {
