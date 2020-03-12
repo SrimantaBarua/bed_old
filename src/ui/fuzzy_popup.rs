@@ -145,7 +145,7 @@ impl FuzzyPopup {
 
                 if i == self.select_idx {
                     let rect = Rect::new(pos, size2(width, self.lines[i].metrics.height).cast());
-                    ctx.color_quad(rect, Color::new(0, 0, 0, 8));
+                    ctx.color_quad(rect, self.theme.fuzzy_select_background_color);
                 }
 
                 let mut pos_here = pos;
@@ -403,13 +403,19 @@ impl FuzzyPopup {
         ) + self.theme.fuzzy_edge_padding * 2
             + self.theme.fuzzy_line_spacing;
 
+        let mut i = 0;
         for (_, line) in &self.filtered {
+            let color = if i == self.select_idx {
+                self.theme.fuzzy_select_color
+            } else {
+                self.theme.fuzzy_foreground_color
+            };
             let fmtline = ShapedTextLine::from_textstr(
                 TextSpan::new(
                     line,
                     self.theme.fuzzy_text_size,
                     TextStyle::default(),
-                    self.theme.fuzzy_foreground_color,
+                    color,
                     TextPitch::Variable,
                     None,
                 ),
@@ -428,6 +434,7 @@ impl FuzzyPopup {
             }
             self.height += fmtline.metrics.height + self.theme.fuzzy_line_spacing * 2;
             self.lines.push(fmtline);
+            i += 1;
         }
     }
 }

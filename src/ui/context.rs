@@ -146,6 +146,7 @@ impl<'a> ActiveRenderCtx<'a> {
     }
 
     pub(super) fn draw_shadow(&mut self, rect: Rect<i32, PixelSize>) {
+        /*
         let outer_dims = SideOffsets2D::new(5, 5, 5, 5);
         let outer_rect = rect.outer_rect(outer_dims);
 
@@ -168,6 +169,7 @@ impl<'a> ActiveRenderCtx<'a> {
             self.tex_quad_arr.push(quad);
             self.tex_quad_arr.flush(&active_shader);
         }
+        */
     }
 
     fn set_uniforms(&mut self) {
