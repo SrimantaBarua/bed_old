@@ -264,13 +264,34 @@ impl Window {
             }
         }
 
-        a.0 = (a.0 / m).round();
-        a.1 = (a.1 / m).round();
+        a.0 /= m;
+        a.1 /= m;
+        // Round
+        if a.0 < 0.0 {
+            a.0 = a.0.floor();
+        } else if a.0 > 0.0 {
+            a.0 = a.0.ceil();
+        }
+        if a.1 < 0.0 {
+            a.1 = a.1.floor();
+        } else if a.0 > 0.0 {
+            a.1 = a.1.ceil();
+        }
 
         // Apply accelation
         self.textview_scroll_v.0 += time * a.0;
         self.textview_scroll_v.1 += time * a.1;
-
+        // Round
+        if self.textview_scroll_v.0 < 0.0 {
+            self.textview_scroll_v.0 = self.textview_scroll_v.0.floor();
+        } else if self.textview_scroll_v.0 > 0.0 {
+            self.textview_scroll_v.0 = self.textview_scroll_v.0.ceil();
+        }
+        if self.textview_scroll_v.1 < 0.0 {
+            self.textview_scroll_v.1 = self.textview_scroll_v.1.floor();
+        } else if self.textview_scroll_v.0 > 0.0 {
+            self.textview_scroll_v.1 = self.textview_scroll_v.1.ceil();
+        }
         // Calculate delta
         let textview_scroll_sx = time * self.textview_scroll_v.0;
         let textview_scroll_sy = time * self.textview_scroll_v.1;

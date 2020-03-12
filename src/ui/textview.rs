@@ -182,6 +182,12 @@ impl TextView {
                 }
                 linum += 1;
             }
+            if linum >= shaped_text.len() {
+                linum = shaped_text.len();
+                if linum > 0 {
+                    linum -= 1;
+                }
+            }
 
             let mut x = 0;
             let mut gidx = 0;
@@ -512,7 +518,11 @@ impl TextView {
                 y -= height as i32;
                 view.start_line += 1;
             }
-            if iter.next().is_none() {
+            if view.start_line + 1 >= shaped_text.len() {
+                view.start_line = shaped_text.len();
+                if view.start_line > 0 {
+                    view.start_line -= 1;
+                }
                 y = 0;
             }
             y as u32
