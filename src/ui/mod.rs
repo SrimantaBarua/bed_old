@@ -66,8 +66,8 @@ impl UICore {
         (ui_core, window, events)
     }
 
-    pub(crate) fn wait_events(&mut self, timeout_sec: f64) {
+    pub(crate) fn poll_events(&mut self) {
         let glfw = &mut *self.glfw.borrow_mut();
-        glfw.wait_events_timeout(timeout_sec);
+        glfw.poll_events();
     }
 }

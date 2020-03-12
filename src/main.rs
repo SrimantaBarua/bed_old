@@ -2,7 +2,7 @@
 
 use std::cell::RefCell;
 use std::rc::Rc;
-use std::time;
+use std::{time, thread};
 
 mod config;
 mod core;
@@ -31,10 +31,11 @@ fn main() {
         ui::UICore::init(args, font_core, config, WIDTH, HEIGHT, TITLE);
     let mut windows = vec![(window, events, time::Instant::now())];
 
-    let target_duration = time::Duration::from_nanos(1_000_000_000 / 60).as_secs_f64();
+    let target_duration = time::Duration::from_nanos(1_000_000_000 / 60);
 
     while windows.len() > 0 {
-        ui_core.wait_events(target_duration);
+        let start = time::Instant::now();
+        ui_core.poll_events();
         windows.retain(|(window, _, _)| !window.should_close());
 
         for i in 0..windows.len() {
@@ -45,6 +46,11 @@ fn main() {
                 window.refresh();
             }
             windows[i].2 = cur_time;
+        }
+
+        let diff = start.elapsed();
+        if diff < target_duration {
+            thread::sleep(target_duration - diff);
         }
     }
 }
