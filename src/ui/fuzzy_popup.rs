@@ -169,6 +169,7 @@ impl FuzzyPopup {
 
     pub(super) fn update_from_async(&mut self) {
         let mut found = false;
+        let start = self.choices.len();
         if let Some(source) = &self.async_source {
             loop {
                 match source.try_recv() {
@@ -185,7 +186,20 @@ impl FuzzyPopup {
             }
         }
         if found {
-            self.re_filter();
+            for choice in &self.choices[start..] {
+                if let Some((score, indices)) = fuzzy_search(choice, &self.user_input) {
+                    self.filtered.push((score, choice.to_owned(), indices));
+                }
+            }
+            self.filtered.sort_by(|a, b| {
+                if a.0 == b.0 {
+                    //a.1.len().cmp(&b.1.len())
+                    a.1.cmp(&b.1)
+                } else {
+                    a.0.cmp(&b.0)
+                }
+            });
+            self.refresh();
             self.to_refresh = true;
         }
     }
@@ -324,7 +338,7 @@ impl FuzzyPopup {
             } else {
                 a.0.cmp(&b.0)
             }
-        })
+        });
     }
 
     fn refresh(&mut self) {
@@ -503,8 +517,10 @@ fn fuzzy_search(haystack: &str, needle: &str) -> Option<(usize, Vec<(usize, usiz
             let mut found = false;
             while let Some((i, hc)) = hci.next() {
                 if hc == nc {
-                    score += i;
-                    if start.is_none() {
+                    if let Some(start) = start {
+                        score += i - start;
+                    } else {
+                        score += i;
                         start = Some(i);
                     }
                     found = true;
