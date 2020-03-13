@@ -154,7 +154,7 @@ impl Buffer {
             tabsize: tabsize,
             dpi_shaped_lines: vec![(initial_dpi, Vec::new(), Vec::new())],
             theme: config.theme().clone(),
-            syntax: Syntax::Default,
+            syntax: Syntax::default(),
             font_core: font_core,
         };
         ret.format_lines_from(0, None);
@@ -371,11 +371,7 @@ impl Buffer {
             }
             // Calculate formatting replace range
             let start_line = self.data.char_to_line(cursor.char_idx);
-            let mut end_line = self.data.char_to_line(final_cidx);
-            let len_chars = trim_newlines(self.data.line(final_cidx)).len_chars();
-            if final_cidx - self.data.line_to_char(end_line) >= len_chars {
-                end_line += 1;
-            }
+            let end_line = self.data.char_to_line(final_cidx);
             // Delete
             self.data.remove(cursor.char_idx..final_cidx);
             // Reformat
@@ -405,21 +401,6 @@ impl Buffer {
             }
             inner.sync_from_and_udpate_char_idx_left(&self.data, self.tabsize);
         }
-
-        // Re-format lines
-        let start_line = self.data.char_to_line(start_cidx);
-        let mut end_line = self.data.char_to_line(end_cidx);
-        let trimmed = trim_newlines(self.data.line(end_line));
-        if end_cidx >= trimmed.len_chars() {
-            end_line += 1;
-        }
-        for (_, _, t) in &mut self.dpi_shaped_lines {
-            t[start_line] = ShapedTextLine::default();
-            if end_line > start_line {
-                t.drain((start_line + 1)..end_line);
-            }
-        }
-        self.format_lines_from(self.data.char_to_line(start_cidx), None);
     }
 
     /// Delete to start of line

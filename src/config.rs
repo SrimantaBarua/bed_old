@@ -35,6 +35,8 @@ pub(crate) struct CfgThemeSyntax {
     pub(crate) identifier: Option<CfgThemeSyntaxElem>,
     pub(crate) string: Option<CfgThemeSyntaxElem>,
     pub(crate) number: Option<CfgThemeSyntaxElem>,
+    pub(crate) entity_name: Option<CfgThemeSyntaxElem>,
+    pub(crate) entity_tag: Option<CfgThemeSyntaxElem>,
 }
 
 #[derive(Clone)]
@@ -205,6 +207,8 @@ impl Cfg {
                 identifier: yaml_syntax_elem(&val["identifier"]),
                 string: yaml_syntax_elem(&val["string"]),
                 number: yaml_syntax_elem(&val["number"]),
+                entity_name: yaml_syntax_elem(&val["entity_name"]),
+                entity_tag: yaml_syntax_elem(&val["entity_tag"]),
             };
             let theme = CfgTheme {
                 ui: ui,
