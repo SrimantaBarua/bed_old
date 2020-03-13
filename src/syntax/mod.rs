@@ -12,7 +12,9 @@ use crate::font::FontCore;
 use crate::types::{Color, TextPitch, TextSlant, TextStyle, TextWeight, DPI};
 use crate::ui::text::{ShapedTextLine, TextLine, TextSpan};
 
+mod c;
 mod default;
+mod markdown;
 mod rust;
 mod toml;
 
@@ -23,6 +25,8 @@ trait SyntaxBackend {
 }
 
 pub(crate) enum Syntax {
+    C(c::CSyntax),
+    Markdown(markdown::MarkdownSyntax),
     Rust(rust::RustSyntax),
     TOML(toml::TOMLSyntax),
     Default(default::DefaultSyntax),
@@ -41,6 +45,8 @@ impl Syntax {
             .extension()
             .and_then(|s| s.to_str())
             .and_then(|s| match s {
+                "c" | "h" | "cpp" | "hpp" | "cxx" => Some(Syntax::C(c::CSyntax::new())),
+                "md" => Some(Syntax::Markdown(markdown::MarkdownSyntax::new())),
                 "rs" => Some(Syntax::Rust(rust::RustSyntax::new())),
                 "toml" => Some(Syntax::TOML(toml::TOMLSyntax::new())),
                 _ => None,
@@ -80,10 +86,13 @@ impl Syntax {
                         theme.ui.textview_text_size,
                         style,
                         color,
-                        TextPitch::Fixed,
+                        tok.pitch,
                         None,
                     );
                     fmtline.0.push(fmtspan);
+                    if j == fmtbuf.len() {
+                        break;
+                    }
                 }
                 ShapedTextLine::from_textline(
                     fmtline,
@@ -145,8 +154,10 @@ impl Syntax {
 
     fn get_backend(&mut self) -> &mut dyn SyntaxBackend {
         match self {
+            Syntax::C(c) => c,
             Syntax::Rust(r) => r,
             Syntax::TOML(t) => t,
+            Syntax::Markdown(m) => m,
             Syntax::Default(d) => d,
         }
     }
@@ -258,6 +269,7 @@ fn tok_hl(theme: &CfgTheme, typ: TokTyp) -> (TextStyle, Color) {
 struct Tok<'a> {
     typ: TokTyp,
     s: &'a str,
+    pitch: TextPitch,
 }
 
 impl<'a> Tok<'a> {
@@ -265,6 +277,7 @@ impl<'a> Tok<'a> {
         Tok {
             s: s,
             typ: TokTyp::Operator,
+            pitch: TextPitch::Fixed,
         }
     }
 
@@ -272,6 +285,7 @@ impl<'a> Tok<'a> {
         Tok {
             s: s,
             typ: TokTyp::Separator,
+            pitch: TextPitch::Fixed,
         }
     }
 
@@ -279,6 +293,7 @@ impl<'a> Tok<'a> {
         Tok {
             s: s,
             typ: TokTyp::Num,
+            pitch: TextPitch::Fixed,
         }
     }
 
@@ -286,6 +301,7 @@ impl<'a> Tok<'a> {
         Tok {
             s: s,
             typ: TokTyp::Comment,
+            pitch: TextPitch::Fixed,
         }
     }
 
@@ -293,6 +309,7 @@ impl<'a> Tok<'a> {
         Tok {
             s: s,
             typ: TokTyp::String,
+            pitch: TextPitch::Fixed,
         }
     }
 
@@ -300,6 +317,7 @@ impl<'a> Tok<'a> {
         Tok {
             s: s,
             typ: TokTyp::Identifier,
+            pitch: TextPitch::Fixed,
         }
     }
 
@@ -307,6 +325,7 @@ impl<'a> Tok<'a> {
         Tok {
             s: s,
             typ: TokTyp::Keyword,
+            pitch: TextPitch::Fixed,
         }
     }
 
@@ -314,6 +333,7 @@ impl<'a> Tok<'a> {
         Tok {
             s: s,
             typ: TokTyp::EntityName,
+            pitch: TextPitch::Fixed,
         }
     }
 
@@ -321,6 +341,7 @@ impl<'a> Tok<'a> {
         Tok {
             s: s,
             typ: TokTyp::EntityTag,
+            pitch: TextPitch::Fixed,
         }
     }
 
@@ -328,7 +349,13 @@ impl<'a> Tok<'a> {
         Tok {
             s: s,
             typ: TokTyp::Misc,
+            pitch: TextPitch::Fixed,
         }
+    }
+
+    fn variable_pitch(mut self) -> Tok<'a> {
+        self.pitch = TextPitch::Variable;
+        self
     }
 }
 
