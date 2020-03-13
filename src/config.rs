@@ -2,7 +2,6 @@
 
 use std::collections::HashMap;
 use std::fs::read_to_string;
-use std::path::PathBuf;
 
 use directories::ProjectDirs;
 use yaml_rust::yaml::{Yaml, YamlLoader};
@@ -29,7 +28,11 @@ pub(crate) struct CfgThemeSyntaxElem {
 #[derive(Clone, Default)]
 pub(crate) struct CfgThemeSyntax {
     pub(crate) comment: Option<CfgThemeSyntaxElem>,
+    pub(crate) accessor: Option<CfgThemeSyntaxElem>,
+    pub(crate) operator: Option<CfgThemeSyntaxElem>,
+    pub(crate) separator: Option<CfgThemeSyntaxElem>,
     pub(crate) keyword: Option<CfgThemeSyntaxElem>,
+    pub(crate) identifier: Option<CfgThemeSyntaxElem>,
     pub(crate) string: Option<CfgThemeSyntaxElem>,
     pub(crate) number: Option<CfgThemeSyntaxElem>,
 }
@@ -195,7 +198,11 @@ impl Cfg {
             let val = &theme_val["syntax"];
             let syntax = CfgThemeSyntax {
                 comment: yaml_syntax_elem(&val["comment"]),
+                operator: yaml_syntax_elem(&val["operator"]),
+                accessor: yaml_syntax_elem(&val["accessor"]),
+                separator: yaml_syntax_elem(&val["separator"]),
                 keyword: yaml_syntax_elem(&val["keyword"]),
+                identifier: yaml_syntax_elem(&val["identifier"]),
                 string: yaml_syntax_elem(&val["string"]),
                 number: yaml_syntax_elem(&val["number"]),
             };
