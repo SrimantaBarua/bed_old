@@ -233,6 +233,20 @@ fn tok_hl(theme: &CfgTheme, typ: TokTyp) -> (TextStyle, Color) {
                 (TextStyle::default(), theme.ui.textview_foreground_color)
             }
         }
+        TokTyp::FuncDefn => {
+            if let Some(elem) = &theme.syntax.func_defn {
+                (elem.style, elem.foreground_color)
+            } else {
+                (TextStyle::default(), theme.ui.textview_foreground_color)
+            }
+        }
+        TokTyp::FuncCall => {
+            if let Some(elem) = &theme.syntax.func_call {
+                (elem.style, elem.foreground_color)
+            } else {
+                (TextStyle::default(), theme.ui.textview_foreground_color)
+            }
+        }
         TokTyp::Keyword => {
             if let Some(elem) = &theme.syntax.keyword {
                 (elem.style, elem.foreground_color)
@@ -321,6 +335,22 @@ impl<'a> Tok<'a> {
         }
     }
 
+    fn func_defn(s: &str) -> Tok {
+        Tok {
+            s: s,
+            typ: TokTyp::FuncDefn,
+            pitch: TextPitch::Fixed,
+        }
+    }
+
+    fn func_call(s: &str) -> Tok {
+        Tok {
+            s: s,
+            typ: TokTyp::FuncCall,
+            pitch: TextPitch::Fixed,
+        }
+    }
+
     fn keyword(s: &str) -> Tok {
         Tok {
             s: s,
@@ -368,6 +398,8 @@ enum TokTyp {
     String,
     Identifier,
     Keyword,
+    FuncDefn,
+    FuncCall,
     EntityName,
     EntityTag,
     Misc,
