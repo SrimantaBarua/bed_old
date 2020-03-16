@@ -1,33 +1,119 @@
 // (C) 2020 Srimanta Barua <srimanta.barua1@gmail.com>
 
+use std::ops::Range;
+
 use super::{SyntaxBackend, Tok};
 
+#[derive(Clone, Copy, Eq, PartialEq)]
 enum State {
     Base,
     FnDef,
+    BlockComment,
+    EscapedChar,
+    CharEnd,
+    String,
 }
 
 pub(crate) struct RustSyntax {
-    state: State,
+    states: Vec<(State, State)>, // start, end state
+    linum: usize,
 }
 
 impl RustSyntax {
     pub(super) fn new() -> RustSyntax {
-        RustSyntax { state: State::Base }
+        RustSyntax {
+            states: Vec::new(),
+            linum: 0,
+        }
     }
 }
 
 impl SyntaxBackend for RustSyntax {
-    fn start_of_line(&mut self) {
-        self.state = State::Base;
+    fn start_of_line(&mut self, linum: usize) {
+        self.linum = linum;
+        if linum >= self.states.len() {
+            self.states.push((State::Base, State::Base));
+        } else if linum == 0 {
+            self.states[linum] = (State::Base, State::Base);
+        } else {
+            self.states[linum].0 = self.states[linum - 1].1;
+            self.states[linum].1 = self.states[linum].0;
+        }
+        match self.states[linum].0 {
+            State::CharEnd | State::EscapedChar => self.states[linum] = (State::Base, State::Base),
+            _ => {}
+        }
+    }
+
+    fn insert_lines(&mut self, linum: usize, nlines: usize) {
+        for _ in 0..nlines {
+            self.states.insert(linum, (State::Base, State::Base));
+        }
+    }
+
+    fn can_end_highlight(&self) -> bool {
+        if self.linum + 1 < self.states.len() {
+            self.states[self.linum].1 == self.states[self.linum + 1].0
+        } else {
+            true
+        }
+    }
+
+    fn remove_lines(&mut self, range: Range<usize>) {
+        self.states.drain(range);
     }
 
     fn next_tok<'a>(&mut self, s: &'a str) -> Option<Tok<'a>> {
+        if s.len() == 0 {
+            return None;
+        }
         let mut lex = Lexer::new(s);
-        match self.state {
+        match self.states[self.linum].1 {
             State::Base => match lex.next()? {
-                (RustTok::Comment, i) => Some(Tok::comment(&s[..i])),
-                (RustTok::String, i) | (RustTok::Char, i) => Some(Tok::string(&s[..i])),
+                (RustTok::BlockCommentStart, mut i) => loop {
+                    match lex.next() {
+                        Some((RustTok::BlockCommentEnd, j)) => {
+                            break Some(Tok::comment(&s[..(i + j)]))
+                        }
+                        Some((_, j)) => i += j,
+                        None => {
+                            self.states[self.linum].1 = State::BlockComment;
+                            break Some(Tok::comment(s));
+                        }
+                    }
+                },
+                (RustTok::OpDoubleQuote, mut i) => loop {
+                    match lex.next() {
+                        Some((RustTok::OpDoubleQuote, j)) => {
+                            break Some(Tok::string(&s[..(i + j)]))
+                        }
+                        Some((RustTok::EscapedChar, _)) => {
+                            self.states[self.linum].1 = State::String;
+                            break Some(Tok::string(&s[..i]));
+                        }
+                        Some((_, j)) => i += j,
+                        None => {
+                            self.states[self.linum].1 = State::String;
+                            break Some(Tok::string(s));
+                        }
+                    }
+                },
+                (RustTok::OpSingleQuote, _) => {
+                    let mut iter = s[1..].char_indices();
+                    match iter.next() {
+                        Some((_, '\\')) => {
+                            self.states[self.linum].1 = State::EscapedChar;
+                            Some(Tok::char(&s[..1]))
+                        }
+                        Some((_, '\'')) => Some(Tok::misc(&s[..1])), // TODO: Error
+                        Some(_) => match iter.next() {
+                            Some((i, '\'')) => Some(Tok::char(&s[..(i + 2)])),
+                            _ => Some(Tok::misc(&s[..1])),
+                        },
+                        _ => Some(Tok::misc(&s[..1])),
+                    }
+                }
+                (RustTok::CommentStart, _) => Some(Tok::comment(s)),
                 (RustTok::Num, i) => Some(Tok::num(&s[..i])),
                 (RustTok::Ident, i) => match lex.next() {
                     Some((RustTok::OpLp, _)) => Some(Tok::func_call(&s[..i])),
@@ -39,37 +125,95 @@ impl SyntaxBackend for RustSyntax {
                 },
                 (RustTok::Op, i) => Some(Tok::operator(&s[..i])),
                 (RustTok::KeyFn, i) => {
-                    self.state = State::FnDef;
+                    self.states[self.linum].1 = State::FnDef;
                     Some(Tok::keyword(&s[..i]))
                 }
                 (RustTok::Key, i) | (RustTok::KeyMut, i) => Some(Tok::keyword(&s[..i])),
-                (RustTok::Space, i) | (RustTok::Misc, i) | (RustTok::OpLp, i) => {
-                    Some(Tok::misc(&s[..i]))
-                }
+                (RustTok::BlockCommentEnd, i)
+                | (RustTok::Space, i)
+                | (RustTok::Misc, i)
+                | (RustTok::EscapedChar, i)
+                | (RustTok::OpLp, i) => Some(Tok::misc(&s[..i])),
             },
             State::FnDef => match lex.next()? {
                 (RustTok::Space, i) => Some(Tok::misc(&s[..i])),
                 (RustTok::Ident, i) => {
-                    self.state = State::Base;
+                    self.states[self.linum].1 = State::Base;
                     Some(Tok::func_defn(&s[..i]))
                 }
                 (_, i) => {
-                    self.state = State::Base;
+                    self.states[self.linum].1 = State::Base;
                     Some(Tok::misc(&s[..i]))
                 }
             },
+            State::BlockComment => {
+                let mut i = 0;
+                loop {
+                    match lex.next() {
+                        Some((RustTok::BlockCommentEnd, j)) => {
+                            self.states[self.linum].1 = State::Base;
+                            break Some(Tok::comment(&s[..(i + j)]));
+                        }
+                        Some((_, j)) => i += j,
+                        None => {
+                            break Some(Tok::comment(s));
+                        }
+                    }
+                }
+            }
+            State::CharEnd => {
+                self.states[self.linum].1 = State::Base;
+                if s.as_bytes()[0] == b'\'' {
+                    Some(Tok::char(&s[..1]))
+                } else {
+                    Some(Tok::misc(&s[..1]))
+                }
+            }
+            State::EscapedChar => {
+                if let Some(l) = escaped_char(&s[1..]) {
+                    self.states[self.linum].1 = State::CharEnd;
+                    Some(Tok::escaped_char(&s[..(l + 1)]))
+                } else {
+                    self.states[self.linum].1 = State::Base;
+                    Some(Tok::misc(&s[..1]))
+                }
+            }
+            State::String => {
+                let mut i = 0;
+                loop {
+                    match lex.next() {
+                        Some((RustTok::OpDoubleQuote, j)) => {
+                            self.states[self.linum].1 = State::Base;
+                            break Some(Tok::string(&s[..(i + j)]));
+                        }
+                        Some((RustTok::EscapedChar, j)) => {
+                            if i == 0 {
+                                break Some(Tok::escaped_char(&s[..(i + j)]));
+                            } else {
+                                break Some(Tok::string(&s[..i]));
+                            }
+                        }
+                        Some((_, j)) => i += j,
+                        None => break Some(Tok::string(s)),
+                    }
+                }
+            }
         }
     }
 }
 
+#[derive(Debug)]
 enum RustTok {
-    Comment,
-    String,
-    Char,
+    CommentStart,
+    BlockCommentStart,
+    BlockCommentEnd,
+    EscapedChar,
     Num,
     Ident,
     OpLp,
     OpAmp,
+    OpDoubleQuote,
+    OpSingleQuote,
     Op,
     KeyFn,
     KeyMut,
@@ -93,79 +237,28 @@ impl<'a> Lexer<'a> {
             (_, '&') => (RustTok::OpAmp, 1),
             (_, '(') => (RustTok::OpLp, 1),
             (_, '/') => match iter.next() {
-                // TODO Block comment, doc comment
-                Some((_, '/')) => (RustTok::Comment, self.s.len()),
+                // TODO doc comment
+                Some((_, '*')) => (RustTok::BlockCommentStart, 2),
+                Some((_, '/')) => (RustTok::CommentStart, 2),
                 Some((_, '=')) => (RustTok::Op, 2),
+                _ => (RustTok::Op, 1),
+            },
+            (_, '*') => match iter.next() {
+                Some((_, '/')) => (RustTok::BlockCommentEnd, 2),
+                // TODO other mul ops
                 _ => (RustTok::Op, 1),
             },
             // TODO raw strings etc
             // TODO multi-line strings
-            (_, '"') => {
-                let mut escaped = false;
-                loop {
-                    if let Some((i, c)) = iter.next() {
-                        if c == '/' {
-                            escaped = !escaped;
-                        } else if c == '"' && !escaped {
-                            break (RustTok::String, i + 1);
-                        }
-                    } else {
-                        break (RustTok::String, self.s.len());
-                    }
+            (_, '"') => (RustTok::OpDoubleQuote, 1),
+            (_, '\'') => (RustTok::OpSingleQuote, 1),
+            (_, '\\') => {
+                if let Some(l) = escaped_char(&self.s[1..]) {
+                    (RustTok::EscapedChar, l)
+                } else {
+                    (RustTok::Misc, 1)
                 }
             }
-            (_, '\'') => match iter.next() {
-                Some((_, '\\')) => {
-                    let mut bytes = self.s[2..].bytes();
-                    match bytes.next() {
-                        Some(b'\'') | Some(b'"') | Some(b't') | Some(b'n') | Some(b'r') => {
-                            match bytes.next() {
-                                Some(b'\'') => (RustTok::Char, 4),
-                                _ => (RustTok::Misc, 1),
-                            }
-                        }
-                        Some(b'x') => match bytes.next() {
-                            Some(b) if b.is_ascii_digit() && b < b'8' => match bytes.next() {
-                                Some(b) if b.is_ascii_hexdigit() => match bytes.next() {
-                                    Some(b'\'') => (RustTok::Char, 6),
-                                    _ => (RustTok::Misc, 1),
-                                },
-                                _ => (RustTok::Misc, 1),
-                            },
-                            _ => (RustTok::Misc, 1),
-                        },
-                        Some(b'u') => match bytes.next() {
-                            Some(b'{') => {
-                                let mut len = 0;
-                                while let Some(b) = bytes.next() {
-                                    if !b.is_ascii_hexdigit() {
-                                        break;
-                                    }
-                                    len += 1;
-                                    if len == 6 {
-                                        break;
-                                    }
-                                }
-                                match bytes.next() {
-                                    Some(b'}') => match bytes.next() {
-                                        Some(b'\'') => (RustTok::Char, len + 6),
-                                        _ => (RustTok::Misc, 1),
-                                    },
-                                    _ => (RustTok::Misc, 1),
-                                }
-                            }
-                            _ => (RustTok::Misc, 1),
-                        },
-                        _ => (RustTok::Misc, 1),
-                    }
-                }
-                Some((_, '\'')) => (RustTok::Misc, 1), // TODO: Error
-                Some(_) => match iter.next() {
-                    Some((i, '\'')) => (RustTok::Char, i + 1),
-                    _ => (RustTok::Misc, 1),
-                },
-                _ => (RustTok::Misc, 1),
-            },
             (_, '0') => (RustTok::Num, bin_num_or_float(self.s)),
             (_, c) if c.is_whitespace() => loop {
                 if let Some((i, c)) = iter.next() {
@@ -263,6 +356,46 @@ fn float_len_from_decimal(s: &str) -> usize {
         len += 1;
     }
     len
+}
+
+fn escaped_char(s: &str) -> Option<usize> {
+    let bytes = s.as_bytes();
+    if bytes.len() < 1 {
+        return None;
+    }
+    match bytes[0] {
+        b'\\' | b'\'' | b'"' | b't' | b'n' | b'r' => Some(1),
+        b'x' => {
+            if bytes.len() < 3 {
+                None
+            } else {
+                if bytes[1].is_ascii_digit() && bytes[1] < b'8' && bytes[2].is_ascii_hexdigit() {
+                    Some(3)
+                } else {
+                    None
+                }
+            }
+        }
+        b'u' => {
+            if bytes.len() < 4 || bytes[1] != b'{' {
+                None
+            } else {
+                let mut len = 2;
+                while len < 8 && len < bytes.len() {
+                    if !bytes[len].is_ascii_hexdigit() {
+                        break;
+                    }
+                    len += 1;
+                }
+                if len == 2 || len == bytes.len() || bytes[len] != b'}' {
+                    None
+                } else {
+                    Some(len + 1)
+                }
+            }
+        }
+        _ => None,
+    }
 }
 
 fn key_or_ident(s: &str) -> RustTok {

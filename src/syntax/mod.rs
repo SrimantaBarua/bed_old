@@ -2,6 +2,7 @@
 
 use std::default::Default;
 use std::fmt::Write as FmtWrite;
+use std::ops::Range;
 use std::path::Path;
 
 use euclid::Size2D;
@@ -19,7 +20,13 @@ mod rust;
 mod toml;
 
 trait SyntaxBackend {
-    fn start_of_line(&mut self);
+    fn start_of_line(&mut self, linum: usize);
+
+    fn can_end_highlight(&self) -> bool;
+
+    fn insert_lines(&mut self, linum: usize, nlines: usize);
+
+    fn remove_lines(&mut self, range: Range<usize>);
 
     fn next_tok<'a>(&mut self, s: &'a str) -> Option<Tok<'a>>;
 }
@@ -74,54 +81,37 @@ impl Syntax {
             let line = data.line(i);
             let mut j = 0;
             let mut fmtline = TextLine::default();
-            backend.start_of_line();
+            backend.start_of_line(i);
             expand_line(line, tabsize, &mut fmtbuf);
 
-            let shaped_line = if fmtbuf.len() > 0 {
-                while let Some(tok) = backend.next_tok(&fmtbuf[j..]) {
-                    j += tok.s.len();
-                    let (style, color) = tok_hl(theme, tok.typ);
-                    let fmtspan = TextSpan::new(
-                        &tok.s,
-                        theme.ui.textview_text_size,
-                        style,
-                        color,
-                        tok.pitch,
-                        None,
-                    );
-                    fmtline.0.push(fmtspan);
-                    if j == fmtbuf.len() {
-                        break;
-                    }
+            while let Some(tok) = backend.next_tok(&fmtbuf[j..]) {
+                j += tok.s.len();
+                let (style, color) = tok_hl(theme, tok.typ);
+                let fmtspan = TextSpan::new(
+                    &tok.s,
+                    theme.ui.textview_text_size,
+                    style,
+                    color,
+                    tok.pitch,
+                    None,
+                );
+                fmtline.0.push(fmtspan);
+                if j == fmtbuf.len() {
+                    break;
                 }
-                ShapedTextLine::from_textline(
-                    fmtline,
-                    theme.ui.textview_fixed_face,
-                    theme.ui.textview_variable_face,
-                    font_core,
-                    dpi,
-                )
-            } else {
-                ShapedTextLine::from_textstr(
-                    TextSpan::new(
-                        " ",
-                        theme.ui.textview_text_size,
-                        TextStyle::default(),
-                        theme.ui.textview_foreground_color,
-                        TextPitch::Fixed,
-                        None,
-                    ),
-                    theme.ui.textview_fixed_face,
-                    theme.ui.textview_variable_face,
-                    font_core,
-                    dpi,
-                )
-            };
+            }
+            let shaped_line = ShapedTextLine::from_textline(
+                fmtline,
+                theme.ui.textview_fixed_face,
+                theme.ui.textview_variable_face,
+                font_core,
+                dpi,
+            );
             if i >= shaped_text.len() {
                 shaped_text.push(shaped_line);
             } else if i == start_linum || shaped_text[i] != shaped_line {
                 shaped_text[i] = shaped_line;
-            } else {
+            } else if backend.can_end_highlight() {
                 if let Some(min) = opt_min_end_linum {
                     if i < min {
                         continue;
@@ -152,6 +142,16 @@ impl Syntax {
         }
     }
 
+    pub(crate) fn insert_lines(&mut self, linum: usize, nlines: usize) {
+        let backend = self.get_backend();
+        backend.insert_lines(linum, nlines);
+    }
+
+    pub(crate) fn remove_lines(&mut self, range: Range<usize>) {
+        let backend = self.get_backend();
+        backend.remove_lines(range);
+    }
+
     fn get_backend(&mut self) -> &mut dyn SyntaxBackend {
         match self {
             Syntax::C(c) => c,
@@ -166,19 +166,23 @@ impl Syntax {
 fn expand_line(slice: RopeSlice, tabsize: usize, buf: &mut String) {
     buf.clear();
     let slice = trim_newlines(slice);
-    let mut x = 0;
-    for c in slice.chars() {
-        match c {
-            '\t' => {
-                let next = (x / tabsize) * tabsize + tabsize;
-                while x < next {
-                    x += 1;
-                    buf.push(' ');
+    if slice.len_chars() == 0 {
+        buf.push(' ');
+    } else {
+        let mut x = 0;
+        for c in slice.chars() {
+            match c {
+                '\t' => {
+                    let next = (x / tabsize) * tabsize + tabsize;
+                    while x < next {
+                        x += 1;
+                        buf.push(' ');
+                    }
                 }
-            }
-            c => {
-                buf.push(c);
-                x += 1;
+                c => {
+                    buf.push(c);
+                    x += 1;
+                }
             }
         }
     }
@@ -254,6 +258,20 @@ fn tok_hl(theme: &CfgTheme, typ: TokTyp) -> (TextStyle, Color) {
                 (TextStyle::default(), theme.ui.textview_foreground_color)
             }
         }
+        TokTyp::EscapedChar => {
+            if let Some(elem) = &theme.syntax.escaped_char {
+                (elem.style, elem.foreground_color)
+            } else {
+                (TextStyle::default(), theme.ui.textview_foreground_color)
+            }
+        }
+        TokTyp::Char => {
+            if let Some(elem) = &theme.syntax.char {
+                (elem.style, elem.foreground_color)
+            } else {
+                (TextStyle::default(), theme.ui.textview_foreground_color)
+            }
+        }
         TokTyp::String => {
             if let Some(elem) = &theme.syntax.string {
                 (elem.style, elem.foreground_color)
@@ -315,6 +333,22 @@ impl<'a> Tok<'a> {
         Tok {
             s: s,
             typ: TokTyp::Comment,
+            pitch: TextPitch::Fixed,
+        }
+    }
+
+    fn char(s: &str) -> Tok {
+        Tok {
+            s: s,
+            typ: TokTyp::Char,
+            pitch: TextPitch::Fixed,
+        }
+    }
+
+    fn escaped_char(s: &str) -> Tok {
+        Tok {
+            s: s,
+            typ: TokTyp::EscapedChar,
             pitch: TextPitch::Fixed,
         }
     }
@@ -395,6 +429,8 @@ enum TokTyp {
     Separator,
     Num,
     Comment,
+    EscapedChar,
+    Char,
     String,
     Identifier,
     Keyword,

@@ -319,18 +319,17 @@ impl Buffer {
             };
             // Calculate formatting replace range
             let start_line = self.data.char_to_line(cidx);
-            let mut end_line = cursor.line_num;
-            let len_chars = trim_newlines(self.data.line(cursor.line_num)).len_chars();
-            if cursor.line_cidx >= len_chars {
-                end_line += 1;
-            }
+            let end_line = cursor.line_num;
             // Delete
             self.data.remove(cidx..cursor.char_idx);
             // Reformat
             for (_, _, t) in &mut self.dpi_shaped_lines {
-                if end_line > start_line + 1 {
-                    t.drain((start_line + 1)..end_line);
+                if end_line > start_line {
+                    t.drain(start_line..end_line);
                 }
+            }
+            if end_line > start_line {
+                self.syntax.remove_lines(start_line..end_line);
             }
             self.format_lines_from(start_line, None);
             // Metrics to place cursors
@@ -376,9 +375,12 @@ impl Buffer {
             self.data.remove(cursor.char_idx..final_cidx);
             // Reformat
             for (_, _, t) in &mut self.dpi_shaped_lines {
-                if end_line > start_line + 1 {
-                    t.drain((start_line + 1)..end_line);
+                if end_line > start_line {
+                    t.drain(start_line..end_line);
                 }
+            }
+            if end_line > start_line {
+                self.syntax.remove_lines(start_line..end_line);
             }
             self.format_lines_from(start_line, None);
             // Metrics to place cursors
@@ -526,6 +528,7 @@ impl Buffer {
         for (_, _, t) in &mut self.dpi_shaped_lines {
             t.drain(linum..(linum + nlines));
         }
+        self.syntax.remove_lines(linum..(linum + nlines));
         self.format_lines_from(linum, None);
     }
 
@@ -596,6 +599,7 @@ impl Buffer {
             }
             end = Some(linum + 1);
         }
+        self.syntax.insert_lines(linum + 1, 1);
         self.format_lines_from(linum, end);
     }
 
@@ -634,6 +638,9 @@ impl Buffer {
             for _ in linum..end_line {
                 t.insert(linum + 1, ShapedTextLine::default());
             }
+        }
+        if end_line > linum {
+            self.syntax.insert_lines(linum + 1, end_line - linum);
         }
         self.format_lines_from(linum, Some(end_line));
     }
