@@ -129,6 +129,7 @@ impl SyntaxBackend for RustSyntax {
                     Some(Tok::keyword(&s[..i]))
                 }
                 (RustTok::Key, i) | (RustTok::KeyMut, i) => Some(Tok::keyword(&s[..i])),
+                (RustTok::KeyTyp, i) => Some(Tok::data_type(&s[..i])),
                 (RustTok::BlockCommentEnd, i)
                 | (RustTok::Space, i)
                 | (RustTok::Misc, i)
@@ -217,6 +218,7 @@ enum RustTok {
     Op,
     KeyFn,
     KeyMut,
+    KeyTyp,
     Key,
     Space,
     Misc,
@@ -408,6 +410,8 @@ fn key_or_ident(s: &str) -> RustTok {
         | "unsized" | "use" | "virtual" | "where" | "while" | "yield" => RustTok::Key,
         "fn" => RustTok::KeyFn,
         "mut" => RustTok::KeyMut,
+        "bool" | "char" | "i8" | "i16" | "i32" | "i64" | "i128" | "isize" | "u8" | "u16"
+        | "u32" | "u64" | "u128" | "usize" | "f32" | "f64" | "str" => RustTok::KeyTyp,
         _ => RustTok::Ident,
     }
 }

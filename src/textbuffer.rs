@@ -10,7 +10,7 @@ use euclid::Size2D;
 use ropey::{iter::Chunks, str_utils::byte_to_char_idx, Rope, RopeSlice};
 use unicode_segmentation::{GraphemeCursor, GraphemeIncomplete};
 
-use crate::config::{Cfg, CfgTheme};
+use crate::config::Cfg;
 use crate::font::FontCore;
 use crate::syntax::Syntax;
 use crate::types::DPI;
@@ -134,7 +134,7 @@ pub(crate) struct Buffer {
     path: Option<String>,
     cursors: HashMap<usize, Weak<RefCell<BufferCursorInner>>>,
     font_core: Rc<RefCell<FontCore>>,
-    theme: CfgTheme,
+    config: Rc<RefCell<Cfg>>,
     syntax: Syntax,
     dpi_shaped_lines: Vec<(Size2D<u32, DPI>, Vec<ShapedTextLine>, Vec<ShapedTextLine>)>,
 }
@@ -145,7 +145,7 @@ impl Buffer {
         tabsize: usize,
         initial_dpi: Size2D<u32, DPI>,
         font_core: Rc<RefCell<FontCore>>,
-        config: &Cfg,
+        config: Rc<RefCell<Cfg>>,
     ) -> Buffer {
         let mut ret = Buffer {
             data: Rope::new(),
@@ -153,7 +153,7 @@ impl Buffer {
             path: None,
             tabsize: tabsize,
             dpi_shaped_lines: vec![(initial_dpi, Vec::new(), Vec::new())],
-            theme: config.theme().clone(),
+            config: config.clone(),
             syntax: Syntax::default(),
             font_core: font_core,
         };
@@ -167,7 +167,7 @@ impl Buffer {
         tabsize: usize,
         initial_dpi: Size2D<u32, DPI>,
         font_core: Rc<RefCell<FontCore>>,
-        config: &Cfg,
+        config: Rc<RefCell<Cfg>>,
     ) -> IOResult<Buffer> {
         File::open(path)
             .and_then(|f| Rope::from_reader(f))
@@ -178,7 +178,7 @@ impl Buffer {
                     path: Some(path.to_owned()),
                     tabsize: tabsize,
                     dpi_shaped_lines: vec![(initial_dpi, Vec::new(), Vec::new())],
-                    theme: config.theme().clone(),
+                    config: config.clone(),
                     syntax: Syntax::from_path(path),
                     font_core: font_core,
                 };
@@ -775,7 +775,7 @@ impl Buffer {
                 start,
                 opt_min_end,
                 self.data.slice(..),
-                &self.theme,
+                &*self.config.borrow(),
                 self.tabsize,
                 tvec,
                 lvec,

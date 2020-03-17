@@ -36,7 +36,7 @@ impl Core {
             TABSIZE,
             dpi,
             self.font_core.clone(),
-            &*self.config.borrow(),
+            self.config.clone(),
         )))
     }
 
@@ -57,7 +57,7 @@ impl Core {
                 TABSIZE,
                 dpi,
                 self.font_core.clone(),
-                &*self.config.borrow(),
+                self.config.clone(),
             )
             .map(|b| Rc::new(RefCell::new(b)))?;
             self.buffers.insert(path.to_owned(), buffer.clone());

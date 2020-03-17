@@ -356,7 +356,7 @@ impl ShapedTextLine {
         height: i32,
         mut baseline: Point2D<i32, PixelSize>,
         font_core: &mut FontCore,
-        cursor: Option<(usize, TextCursorStyle, Color)>,
+        cursor: Option<(usize, TextCursorStyle, Color, Color)>,
     ) -> Point2D<i32, PixelSize> {
         let mut grapheme = 0;
         let mut block_cursor_width = 10;
@@ -370,8 +370,13 @@ impl ShapedTextLine {
 
             let (_, face) = font_core.get(span.face, span.style).unwrap();
             for cluster in span.clusters() {
-                if let Some((gidx, style, cursor_color)) = cursor {
+                if let Some((gidx, style, cursor_color, cursor_text_color)) = cursor {
                     if gidx >= grapheme && gidx < grapheme + cluster.num_graphemes {
+                        let glyph_color = if style == TextCursorStyle::Block {
+                            cursor_text_color
+                        } else {
+                            span.color
+                        };
                         let num_glyphs = cluster.glyph_infos.len();
                         if num_glyphs % cluster.num_graphemes != 0 {
                             let startx = baseline.x;
@@ -381,7 +386,7 @@ impl ShapedTextLine {
                                     span.face,
                                     gi.gid,
                                     span.size,
-                                    span.color,
+                                    glyph_color,
                                     span.style,
                                     &mut face.raster,
                                 );
@@ -418,7 +423,7 @@ impl ShapedTextLine {
                                         span.face,
                                         gi.gid,
                                         span.size,
-                                        span.color,
+                                        glyph_color,
                                         span.style,
                                         &mut face.raster,
                                     );
@@ -463,7 +468,7 @@ impl ShapedTextLine {
                 grapheme += cluster.num_graphemes;
             }
         }
-        if let Some((gidx, style, cursor_color)) = cursor {
+        if let Some((gidx, style, cursor_color, _)) = cursor {
             if gidx == grapheme {
                 let (cursor_y, cursor_size) = match style {
                     TextCursorStyle::Beam => (baseline.y - ascender, size2(2, height)),

@@ -8,7 +8,7 @@ use std::path::Path;
 use euclid::Size2D;
 use ropey::RopeSlice;
 
-use crate::config::CfgTheme;
+use crate::config::{Cfg, CfgUiTheme};
 use crate::font::FontCore;
 use crate::types::{Color, TextPitch, TextSlant, TextStyle, TextWeight, DPI};
 use crate::ui::text::{ShapedTextLine, TextLine, TextSpan};
@@ -68,7 +68,7 @@ impl Syntax {
         start_linum: usize,
         opt_min_end_linum: Option<usize>,
         data: RopeSlice,
-        theme: &CfgTheme,
+        config: &Cfg,
         tabsize: usize,
         shaped_text: &mut Vec<ShapedTextLine>,
         shaped_gutter: &mut Vec<ShapedTextLine>,
@@ -76,6 +76,7 @@ impl Syntax {
     ) {
         let mut fmtbuf = String::new();
         let backend = self.get_backend();
+        let theme = config.ui.theme();
 
         for i in start_linum..data.len_lines() {
             let line = data.line(i);
@@ -89,7 +90,7 @@ impl Syntax {
                 let (style, color) = tok_hl(theme, tok.typ);
                 let fmtspan = TextSpan::new(
                     &tok.s,
-                    theme.ui.textview_text_size,
+                    config.ui.textview.text_size,
                     style,
                     color,
                     tok.pitch,
@@ -102,8 +103,8 @@ impl Syntax {
             }
             let shaped_line = ShapedTextLine::from_textline(
                 fmtline,
-                theme.ui.textview_fixed_face,
-                theme.ui.textview_variable_face,
+                config.ui.textview.fixed_face,
+                config.ui.textview.variable_face,
                 font_core,
                 dpi,
             );
@@ -125,16 +126,16 @@ impl Syntax {
             write!(&mut fmtbuf, "{}", linum).unwrap();
             let fmtspan = TextSpan::new(
                 &fmtbuf,
-                theme.ui.gutter_text_size,
+                config.ui.gutter.text_size,
                 TextStyle::new(TextWeight::Medium, TextSlant::Roman),
-                theme.ui.gutter_foreground_color,
+                theme.gutter.foreground_color,
                 TextPitch::Fixed,
                 None,
             );
             let shaped_line = ShapedTextLine::from_textstr(
                 fmtspan,
-                theme.ui.gutter_fixed_face,
-                theme.ui.gutter_variable_face,
+                config.ui.gutter.fixed_face,
+                config.ui.gutter.variable_face,
                 font_core,
                 dpi,
             );
@@ -200,100 +201,107 @@ fn trim_newlines(slice: RopeSlice) -> RopeSlice {
     slice.slice(..end)
 }
 
-fn tok_hl(theme: &CfgTheme, typ: TokTyp) -> (TextStyle, Color) {
+fn tok_hl(theme: &CfgUiTheme, typ: TokTyp) -> (TextStyle, Color) {
     match typ {
         TokTyp::Num => {
             if let Some(elem) = &theme.syntax.number {
-                (elem.style, elem.foreground_color)
+                (elem.text_style, elem.foreground_color)
             } else {
-                (TextStyle::default(), theme.ui.textview_foreground_color)
+                (TextStyle::default(), theme.textview.foreground_color)
             }
         }
         TokTyp::Comment => {
             if let Some(elem) = &theme.syntax.comment {
-                (elem.style, elem.foreground_color)
+                (elem.text_style, elem.foreground_color)
             } else {
-                (TextStyle::default(), theme.ui.textview_foreground_color)
+                (TextStyle::default(), theme.textview.foreground_color)
             }
         }
         TokTyp::Operator => {
             if let Some(elem) = &theme.syntax.operator {
-                (elem.style, elem.foreground_color)
+                (elem.text_style, elem.foreground_color)
             } else {
-                (TextStyle::default(), theme.ui.textview_foreground_color)
+                (TextStyle::default(), theme.textview.foreground_color)
             }
         }
         TokTyp::Separator => {
             if let Some(elem) = &theme.syntax.separator {
-                (elem.style, elem.foreground_color)
+                (elem.text_style, elem.foreground_color)
             } else {
-                (TextStyle::default(), theme.ui.textview_foreground_color)
+                (TextStyle::default(), theme.textview.foreground_color)
             }
         }
         TokTyp::Identifier => {
             if let Some(elem) = &theme.syntax.identifier {
-                (elem.style, elem.foreground_color)
+                (elem.text_style, elem.foreground_color)
             } else {
-                (TextStyle::default(), theme.ui.textview_foreground_color)
+                (TextStyle::default(), theme.textview.foreground_color)
             }
         }
         TokTyp::FuncDefn => {
             if let Some(elem) = &theme.syntax.func_defn {
-                (elem.style, elem.foreground_color)
+                (elem.text_style, elem.foreground_color)
             } else {
-                (TextStyle::default(), theme.ui.textview_foreground_color)
+                (TextStyle::default(), theme.textview.foreground_color)
             }
         }
         TokTyp::FuncCall => {
             if let Some(elem) = &theme.syntax.func_call {
-                (elem.style, elem.foreground_color)
+                (elem.text_style, elem.foreground_color)
             } else {
-                (TextStyle::default(), theme.ui.textview_foreground_color)
+                (TextStyle::default(), theme.textview.foreground_color)
             }
         }
         TokTyp::Keyword => {
             if let Some(elem) = &theme.syntax.keyword {
-                (elem.style, elem.foreground_color)
+                (elem.text_style, elem.foreground_color)
             } else {
-                (TextStyle::default(), theme.ui.textview_foreground_color)
+                (TextStyle::default(), theme.textview.foreground_color)
+            }
+        }
+        TokTyp::DataType => {
+            if let Some(elem) = &theme.syntax.data_type {
+                (elem.text_style, elem.foreground_color)
+            } else {
+                (TextStyle::default(), theme.textview.foreground_color)
             }
         }
         TokTyp::EscapedChar => {
             if let Some(elem) = &theme.syntax.escaped_char {
-                (elem.style, elem.foreground_color)
+                (elem.text_style, elem.foreground_color)
             } else {
-                (TextStyle::default(), theme.ui.textview_foreground_color)
+                (TextStyle::default(), theme.textview.foreground_color)
             }
         }
         TokTyp::Char => {
             if let Some(elem) = &theme.syntax.char {
-                (elem.style, elem.foreground_color)
+                (elem.text_style, elem.foreground_color)
             } else {
-                (TextStyle::default(), theme.ui.textview_foreground_color)
+                (TextStyle::default(), theme.textview.foreground_color)
             }
         }
         TokTyp::String => {
             if let Some(elem) = &theme.syntax.string {
-                (elem.style, elem.foreground_color)
+                (elem.text_style, elem.foreground_color)
             } else {
-                (TextStyle::default(), theme.ui.textview_foreground_color)
+                (TextStyle::default(), theme.textview.foreground_color)
             }
         }
         TokTyp::EntityName => {
             if let Some(elem) = &theme.syntax.entity_name {
-                (elem.style, elem.foreground_color)
+                (elem.text_style, elem.foreground_color)
             } else {
-                (TextStyle::default(), theme.ui.textview_foreground_color)
+                (TextStyle::default(), theme.textview.foreground_color)
             }
         }
         TokTyp::EntityTag => {
             if let Some(elem) = &theme.syntax.entity_tag {
-                (elem.style, elem.foreground_color)
+                (elem.text_style, elem.foreground_color)
             } else {
-                (TextStyle::default(), theme.ui.textview_foreground_color)
+                (TextStyle::default(), theme.textview.foreground_color)
             }
         }
-        TokTyp::Misc => (TextStyle::default(), theme.ui.textview_foreground_color),
+        TokTyp::Misc => (TextStyle::default(), theme.textview.foreground_color),
     }
 }
 
@@ -393,6 +401,14 @@ impl<'a> Tok<'a> {
         }
     }
 
+    fn data_type(s: &str) -> Tok {
+        Tok {
+            s: s,
+            typ: TokTyp::DataType,
+            pitch: TextPitch::Fixed,
+        }
+    }
+
     fn entity_name(s: &str) -> Tok {
         Tok {
             s: s,
@@ -434,6 +450,7 @@ enum TokTyp {
     String,
     Identifier,
     Keyword,
+    DataType,
     FuncDefn,
     FuncCall,
     EntityName,

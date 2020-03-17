@@ -57,7 +57,7 @@ impl UICore {
             ui_core.glfw.clone(),
             ui_core.core.clone(),
             ui_core.font_core.clone(),
-            &*ui_core.config.borrow(),
+            ui_core.config.clone(),
             first_buffer_path,
             width,
             height,
