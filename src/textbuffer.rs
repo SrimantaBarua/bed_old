@@ -131,6 +131,7 @@ impl BufferPos {
 pub(crate) struct Buffer {
     data: Rope,
     tabsize: usize,
+    indent_tabs: bool,
     path: Option<String>,
     cursors: HashMap<usize, Weak<RefCell<BufferCursorInner>>>,
     font_core: Rc<RefCell<FontCore>>,
@@ -142,16 +143,22 @@ pub(crate) struct Buffer {
 impl Buffer {
     /// Create empty text buffer
     pub(crate) fn empty(
-        tabsize: usize,
         initial_dpi: Size2D<u32, DPI>,
         font_core: Rc<RefCell<FontCore>>,
         config: Rc<RefCell<Cfg>>,
     ) -> Buffer {
+        let syntax = Syntax::default();
+        let (tabsize, indent_tabs) = {
+            let cfg = &*config.borrow();
+            let cfgsyn = cfg.syntax(syntax.name());
+            (cfgsyn.tab_width as usize, cfgsyn.indent_tabs)
+        };
         let mut ret = Buffer {
             data: Rope::new(),
             cursors: HashMap::new(),
             path: None,
             tabsize: tabsize,
+            indent_tabs: indent_tabs,
             dpi_shaped_lines: vec![(initial_dpi, Vec::new(), Vec::new())],
             config: config.clone(),
             syntax: Syntax::default(),
@@ -164,7 +171,6 @@ impl Buffer {
     /// Create buffer from file
     pub(crate) fn from_file(
         path: &str,
-        tabsize: usize,
         initial_dpi: Size2D<u32, DPI>,
         font_core: Rc<RefCell<FontCore>>,
         config: Rc<RefCell<Cfg>>,
@@ -172,14 +178,21 @@ impl Buffer {
         File::open(path)
             .and_then(|f| Rope::from_reader(f))
             .map(|r| {
+                let syntax = Syntax::from_path(path);
+                let (tabsize, indent_tabs) = {
+                    let cfg = &*config.borrow();
+                    let cfgsyn = cfg.syntax(syntax.name());
+                    (cfgsyn.tab_width as usize, cfgsyn.indent_tabs)
+                };
                 let mut ret = Buffer {
                     data: r,
                     cursors: HashMap::new(),
                     path: Some(path.to_owned()),
                     tabsize: tabsize,
+                    indent_tabs: indent_tabs,
                     dpi_shaped_lines: vec![(initial_dpi, Vec::new(), Vec::new())],
+                    syntax: syntax,
                     config: config.clone(),
-                    syntax: Syntax::from_path(path),
                     font_core: font_core,
                 };
                 ret.format_lines_from(0, None);
@@ -219,13 +232,6 @@ impl Buffer {
         } else {
             unreachable!()
         }
-    }
-
-    /// Set buffer tabsize
-    pub(crate) fn set_tabsize(&mut self, tabsize: usize) {
-        self.tabsize = tabsize;
-        // TODO: Update all cursors
-        // TODO: Re-format lines
     }
 
     /// Number of lines in buffer
@@ -567,10 +573,20 @@ impl Buffer {
 
     /// Insert character at given cursor position
     pub(crate) fn insert_char(&mut self, cursor: &mut BufferCursor, c: char) {
-        let (old_char_idx, view_id) = {
+        let (old_char_idx, nchars, view_id) = {
             let cursor = &mut *cursor.inner.borrow_mut();
-            self.data.insert_char(cursor.char_idx, c);
-            (cursor.char_idx, cursor.view_id)
+            let nchars = if c == '\t' && !self.indent_tabs {
+                let next = (cursor.line_gidx / self.tabsize) * self.tabsize + self.tabsize;
+                let diff = next - cursor.line_gidx;
+                for _ in 0..diff {
+                    self.data.insert_char(cursor.char_idx, ' ');
+                }
+                diff
+            } else {
+                self.data.insert_char(cursor.char_idx, c);
+                1
+            };
+            (cursor.char_idx, nchars, cursor.view_id)
         };
 
         // Update cursors after current cursor position (inclusive of current cursor)
@@ -586,7 +602,7 @@ impl Buffer {
                 inner.sync_line_cidx_gidx_right(&self.data, self.tabsize);
                 continue;
             }
-            inner.char_idx += 1;
+            inner.char_idx += nchars;
             inner.sync_from_and_udpate_char_idx_right(&self.data, self.tabsize);
         }
 

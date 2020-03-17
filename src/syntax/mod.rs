@@ -153,6 +153,16 @@ impl Syntax {
         backend.remove_lines(range);
     }
 
+    pub(crate) fn name(&self) -> &str {
+        match self {
+            Syntax::C(c) => "c",
+            Syntax::Rust(r) => "rust",
+            Syntax::TOML(t) => "toml",
+            Syntax::Markdown(m) => "markdown",
+            Syntax::Default(d) => "default",
+        }
+    }
+
     fn get_backend(&mut self) -> &mut dyn SyntaxBackend {
         match self {
             Syntax::C(c) => c,

@@ -494,7 +494,7 @@ impl CfgSyntax {
 #[derive(Debug)]
 pub(crate) struct Cfg {
     pub(crate) ui: CfgUi,
-    pub(crate) syntax: CfgSyntax,
+    syntaxes: HashMap<String, CfgSyntax>,
 }
 
 impl Cfg {
@@ -512,17 +512,37 @@ impl Cfg {
         }
     }
 
+    pub(crate) fn syntax(&self, name: &str) -> &CfgSyntax {
+        self.syntaxes
+            .get(name)
+            .unwrap_or(self.syntaxes.get("default").unwrap())
+    }
+
     fn from_yaml(yaml: &Yaml, cfg_dir_path: &Path, font_core: &mut FontCore) -> Cfg {
+        let mut syntaxes = HashMap::new();
+        syntaxes.insert("default".to_owned(), CfgSyntax::default());
+        match &yaml["syntax"] {
+            Yaml::Hash(h) => {
+                for (k, v) in h.iter() {
+                    if let Some(name) = k.as_str() {
+                        syntaxes.insert(name.to_owned(), CfgSyntax::from_yaml(v));
+                    }
+                }
+            }
+            _ => {}
+        }
         Cfg {
             ui: CfgUi::from_yaml(&yaml["ui"], cfg_dir_path, font_core),
-            syntax: CfgSyntax::from_yaml(&yaml["syntax"]),
+            syntaxes: syntaxes,
         }
     }
 
     fn default(font_core: &mut FontCore) -> Cfg {
+        let mut syntaxes = HashMap::new();
+        syntaxes.insert("default".to_owned(), CfgSyntax::default());
         Cfg {
             ui: CfgUi::default(font_core),
-            syntax: CfgSyntax::default(),
+            syntaxes: syntaxes,
         }
     }
 }

@@ -12,8 +12,6 @@ use crate::font::FontCore;
 use crate::textbuffer::Buffer;
 use crate::types::DPI;
 
-const TABSIZE: usize = 8;
-
 pub(crate) struct Core {
     buffers: HashMap<String, Rc<RefCell<Buffer>>>,
     font_core: Rc<RefCell<FontCore>>,
@@ -33,7 +31,6 @@ impl Core {
 
     pub(crate) fn new_empty_buffer(&mut self, dpi: Size2D<u32, DPI>) -> Rc<RefCell<Buffer>> {
         Rc::new(RefCell::new(Buffer::empty(
-            TABSIZE,
             dpi,
             self.font_core.clone(),
             self.config.clone(),
@@ -52,14 +49,8 @@ impl Core {
             }
             Ok(buffer.clone())
         } else {
-            let buffer = Buffer::from_file(
-                path,
-                TABSIZE,
-                dpi,
-                self.font_core.clone(),
-                self.config.clone(),
-            )
-            .map(|b| Rc::new(RefCell::new(b)))?;
+            let buffer = Buffer::from_file(path, dpi, self.font_core.clone(), self.config.clone())
+                .map(|b| Rc::new(RefCell::new(b)))?;
             self.buffers.insert(path.to_owned(), buffer.clone());
             Ok(buffer)
         }
