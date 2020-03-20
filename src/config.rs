@@ -425,9 +425,9 @@ impl CfgUi {
     }
 
     fn from_yaml(yaml: &Yaml, cfg_dir_path: &Path, font_core: &mut FontCore) -> CfgUi {
-        let textview = CfgUiTextview::from_yaml(yaml, font_core);
-        let gutter = CfgUiGutter::from_yaml(yaml, font_core);
-        let fuzzy = CfgUiFuzzy::from_yaml(yaml, font_core);
+        let textview = CfgUiTextview::from_yaml(&yaml["textview"], font_core);
+        let gutter = CfgUiGutter::from_yaml(&yaml["gutter"], font_core);
+        let fuzzy = CfgUiFuzzy::from_yaml(&yaml["fuzzy"], font_core);
         let mut cur_theme = yaml["theme"].as_str().unwrap_or("default").to_owned();
         let mut themes = HashMap::new();
         themes.insert("default".to_owned(), CfgUiTheme::default());
