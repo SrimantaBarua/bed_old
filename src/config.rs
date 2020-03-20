@@ -148,6 +148,48 @@ impl CfgUiFuzzy {
 }
 
 #[derive(Debug)]
+pub(crate) struct CfgUiPrompt {
+    pub(crate) text_size: TextSize,
+    pub(crate) fixed_face: FaceKey,
+    pub(crate) variable_face: FaceKey,
+    pub(crate) width_percentage: u32,
+    pub(crate) bottom_offset: u32,
+}
+
+impl CfgUiPrompt {
+    fn from_yaml(yaml: &Yaml, font_core: &mut FontCore) -> CfgUiPrompt {
+        let text_size = TextSize::from_f32(yaml["text_size"].as_f64().unwrap_or(TEXT_SIZE) as f32);
+        let fixed_face_names = yaml["fixed_face"].as_str().unwrap_or(FIXED_FONT);
+        let variable_face_names = yaml["variable_face"].as_str().unwrap_or(VARIABLE_FONT);
+        let fixed_face =
+            face_from_str(fixed_face_names, font_core).expect("failed to get fixed face");
+        let variable_face =
+            face_from_str(variable_face_names, font_core).expect("failed to get variable face");
+        let width_perc = yaml["width_percentage"].as_i64().unwrap_or(85) as u32;
+        let botoff = yaml["bottom_offset"].as_i64().unwrap_or(10) as u32;
+        CfgUiPrompt {
+            text_size: text_size,
+            fixed_face: fixed_face,
+            variable_face: variable_face,
+            width_percentage: width_perc,
+            bottom_offset: botoff,
+        }
+    }
+
+    fn default(fc: &mut FontCore) -> CfgUiPrompt {
+        let fixed = fc.find(FIXED_FONT).expect("failed to get fixed face");
+        let variable = fc.find(VARIABLE_FONT).expect("failed to get variable face");
+        CfgUiPrompt {
+            text_size: TextSize::from_f32(GUTTER_TEXT_SIZE as f32),
+            fixed_face: fixed,
+            variable_face: variable,
+            width_percentage: 85,
+            bottom_offset: 10,
+        }
+    }
+}
+
+#[derive(Debug)]
 pub(crate) struct CfgUiThemeTextview {
     pub(crate) background_color: Color,
     pub(crate) foreground_color: Color,
@@ -302,6 +344,49 @@ impl CfgUiThemeFuzzy {
 }
 
 #[derive(Debug)]
+pub(crate) struct CfgUiThemePrompt {
+    pub(crate) background_color: Color,
+    pub(crate) foreground_color: Color,
+    pub(crate) cursor_color: Color,
+    pub(crate) edge_padding: u32,
+}
+
+impl Default for CfgUiThemePrompt {
+    fn default() -> CfgUiThemePrompt {
+        CfgUiThemePrompt {
+            background_color: Color::new(255, 255, 255, 255),
+            foreground_color: Color::new(0, 0, 0, 96),
+            cursor_color: Color::new(255, 255, 255, 255),
+            edge_padding: 10,
+        }
+    }
+}
+
+impl CfgUiThemePrompt {
+    fn from_yaml(yaml: &Yaml) -> CfgUiThemePrompt {
+        let bgcol = yaml["background_color"]
+            .as_str()
+            .and_then(|s| Color::parse(s))
+            .unwrap_or(Color::new(255, 255, 255, 255));
+        let fgcol = yaml["foreground_color"]
+            .as_str()
+            .and_then(|s| Color::parse(s))
+            .unwrap_or(Color::new(0, 0, 0, 255));
+        let cursorcol = yaml["cursor_color"]
+            .as_str()
+            .and_then(|s| Color::parse(s))
+            .unwrap_or(Color::new(0, 0, 0, 255));
+        let edgepad = yaml["edge_padding"].as_i64().unwrap_or(10) as u32;
+        CfgUiThemePrompt {
+            background_color: bgcol,
+            foreground_color: fgcol,
+            cursor_color: cursorcol,
+            edge_padding: edgepad,
+        }
+    }
+}
+
+#[derive(Debug)]
 pub(crate) struct CfgUiThemeSyntaxElem {
     pub(crate) foreground_color: Color,
     pub(crate) text_style: TextStyle,
@@ -382,6 +467,7 @@ pub(crate) struct CfgUiTheme {
     pub(crate) textview: CfgUiThemeTextview,
     pub(crate) gutter: CfgUiThemeGutter,
     pub(crate) fuzzy: CfgUiThemeFuzzy,
+    pub(crate) prompt: CfgUiThemePrompt,
     pub(crate) syntax: CfgUiThemeSyntax,
 }
 
@@ -405,6 +491,7 @@ impl CfgUiTheme {
             textview: CfgUiThemeTextview::from_yaml(&yaml["textview"]),
             gutter: CfgUiThemeGutter::from_yaml(&yaml["gutter"]),
             fuzzy: CfgUiThemeFuzzy::from_yaml(&yaml["fuzzy"]),
+            prompt: CfgUiThemePrompt::from_yaml(&yaml["prompt"]),
             syntax: CfgUiThemeSyntax::from_yaml(&yaml["syntax"]),
         }
     }
@@ -415,6 +502,7 @@ pub(crate) struct CfgUi {
     pub(crate) textview: CfgUiTextview,
     pub(crate) gutter: CfgUiGutter,
     pub(crate) fuzzy: CfgUiFuzzy,
+    pub(crate) prompt: CfgUiPrompt,
     cur_theme: String,
     themes: HashMap<String, CfgUiTheme>,
 }
@@ -428,6 +516,7 @@ impl CfgUi {
         let textview = CfgUiTextview::from_yaml(&yaml["textview"], font_core);
         let gutter = CfgUiGutter::from_yaml(&yaml["gutter"], font_core);
         let fuzzy = CfgUiFuzzy::from_yaml(&yaml["fuzzy"], font_core);
+        let prompt = CfgUiPrompt::from_yaml(&yaml["prompt"], font_core);
         let mut cur_theme = yaml["theme"].as_str().unwrap_or("default").to_owned();
         let mut themes = HashMap::new();
         themes.insert("default".to_owned(), CfgUiTheme::default());
@@ -448,6 +537,7 @@ impl CfgUi {
             textview: textview,
             gutter: gutter,
             fuzzy: fuzzy,
+            prompt: prompt,
             cur_theme: cur_theme,
             themes: themes,
         }
@@ -461,6 +551,7 @@ impl CfgUi {
             textview: CfgUiTextview::default(font_core),
             gutter: CfgUiGutter::default(font_core),
             fuzzy: CfgUiFuzzy::default(font_core),
+            prompt: CfgUiPrompt::default(font_core),
             cur_theme: "default".to_owned(),
             themes: themes,
         }

@@ -7,6 +7,7 @@ use std::sync::mpsc::channel;
 use std::sync::mpsc::Receiver;
 use std::{thread, time};
 
+use directories::BaseDirs;
 #[cfg(target_os = "windows")]
 use euclid::SideOffsets2D;
 use euclid::{point2, size2, Rect, Size2D};
@@ -19,22 +20,12 @@ use crate::types::{Color, PixelSize};
 
 use super::context::RenderCtx;
 use super::fuzzy_popup::FuzzyPopup;
+use super::prompt::Prompt;
 use super::text::TextCursorStyle;
 use super::textview::TextView;
 use crate::font::FontCore;
 
 static CLEAR_COLOR: Color = Color::new(255, 255, 255, 255);
-
-static COMMANDS: [&'static str; 8] = [
-    "quit",
-    "write",
-    "edit",
-    "cd",
-    "buffer_prev",
-    "buffer_next",
-    "number",
-    "relative_number",
-];
 
 // Because windows messes things up, we have to get viewable region
 #[cfg(not(target_os = "windows"))]
@@ -58,11 +49,11 @@ pub(crate) struct Window {
     glfw: Rc<RefCell<Glfw>>,
     core: Rc<RefCell<Core>>,
     textview: TextView,
+    prompt: Prompt,
     fuzzy_popup: FuzzyPopup,
     textview_scroll_v: (f64, f64),
     input_state: InputState,
     font_core: Rc<RefCell<FontCore>>,
-    handling_command: Option<String>,
     working_directory: PathBuf,
 }
 
@@ -147,7 +138,9 @@ impl Window {
             view_id,
         );
         // Initialize fuzzy search popup
-        let fuzzy_popup = FuzzyPopup::new(inner_rect, font_core.clone(), config, dpi);
+        let fuzzy_popup = FuzzyPopup::new(inner_rect, font_core.clone(), config.clone(), dpi);
+        // Initialize editor prompt
+        let prompt = Prompt::new(inner_rect, font_core.clone(), config, dpi);
         // Make window visible
         window.show();
         // Return window wrapper
@@ -160,10 +153,10 @@ impl Window {
                 core: core,
                 textview: textview,
                 fuzzy_popup: fuzzy_popup,
+                prompt: prompt,
                 textview_scroll_v: (0.0, 0.0),
                 input_state: InputState::default(),
                 font_core: font_core,
-                handling_command: None,
                 working_directory: std::env::current_dir()
                     .expect("failed to get current directory"),
             },
@@ -274,6 +267,9 @@ impl Window {
         if self.fuzzy_popup.is_active() {
             self.fuzzy_popup.draw(&mut active_ctx);
         }
+        if self.prompt.is_active() {
+            self.prompt.draw(&mut active_ctx);
+        }
 
         self.window.swap_buffers();
     }
@@ -286,7 +282,69 @@ impl Window {
         self.window.set_should_close(val);
     }
 
-    fn handle_command(&mut self, selection: Option<String>) {
+    fn handle_command(&mut self) {
+        let prompt_s = self.prompt.get_string().trim();
+        let mut iter = prompt_s.split_whitespace();
+        match iter.next() {
+            Some(":q") | Some(":quit") => {
+                self.input_state.mode = InputMode::Normal;
+                self.prompt.set_active(false);
+                self.set_should_close(true);
+            }
+            Some(":bn") | Some(":bnext") => {
+                self.textview.next_buffer();
+                self.input_state.mode = InputMode::Normal;
+                self.prompt.set_active(false);
+            }
+            Some(":bp") | Some(":bprevious") => {
+                self.textview.prev_buffer();
+                self.input_state.mode = InputMode::Normal;
+                self.prompt.set_active(false);
+            }
+            Some(":e") | Some(":edit") => match iter.next() {
+                Some(fname) => {
+                    let core = &mut *self.core.borrow_mut();
+                    let path = Path::new(fname);
+                    let path = if path.has_root() {
+                        path.to_path_buf()
+                    } else if path.starts_with("~") {
+                        let path = path.strip_prefix("~").unwrap();
+                        let mut buf = BaseDirs::new()
+                            .expect("failed to get base dirs")
+                            .home_dir()
+                            .to_path_buf();
+                        buf.push(path);
+                        buf
+                    } else {
+                        let mut buf = self.working_directory.clone();
+                        buf.push(path);
+                        buf
+                    };
+                    match core.new_buffer_from_file(path.to_str().unwrap(), self.render_ctx.dpi) {
+                        Ok(buffer) => {
+                            let view_id = core.next_view_id();
+                            self.textview.add_buffer(buffer, view_id);
+                        }
+                        Err(e) => {
+                            println!("failed to open file: {:?}: {}", path, e);
+                        }
+                    }
+                    self.input_state.mode = InputMode::Normal;
+                    self.prompt.set_active(false);
+                }
+                _ => {
+                    self.input_state.mode = InputMode::Normal;
+                    self.prompt.set_active(false);
+                }
+            },
+            _ => {
+                self.input_state.mode = InputMode::Normal;
+                self.prompt.set_active(false);
+            }
+        }
+    }
+
+    /*
         if let Some(command) = &self.handling_command {
             match &command[..] {
                 "edit" => {
@@ -369,14 +427,8 @@ impl Window {
                         self.fuzzy_popup.set_active(false);
                     }
                     "buffer_prev" => {
-                        self.textview.prev_buffer();
-                        self.input_state.mode = InputMode::Normal;
-                        self.fuzzy_popup.set_active(false);
                     }
                     "buffer_next" => {
-                        self.textview.next_buffer();
-                        self.input_state.mode = InputMode::Normal;
-                        self.fuzzy_popup.set_active(false);
                     }
                     _ => {
                         self.input_state.mode = InputMode::Normal;
@@ -389,12 +441,14 @@ impl Window {
             }
         }
     }
+    */
 
     fn resize(&mut self, size: Size2D<u32, PixelSize>) {
         let vrect = get_viewable_rect(&self.window);
         self.render_ctx.set_size(size);
         self.textview.set_rect(vrect);
         self.fuzzy_popup.set_window_rect(vrect);
+        self.prompt.set_window_rect(vrect);
     }
 
     fn handle_event(&mut self, event: WindowEvent) {
@@ -535,11 +589,8 @@ impl Window {
                     state.action_multiplier.clear();
                     state.movement_multiplier.clear();
                     state.mode = InputMode::Command;
-                    self.fuzzy_popup.set_active(true);
-                    self.fuzzy_popup.set_default_on_empty(false);
-                    self.fuzzy_popup.set_input_label(":");
-                    self.fuzzy_popup.push_str_choices(&COMMANDS);
-                    self.fuzzy_popup.re_filter();
+                    self.prompt.set_active(true);
+                    self.prompt.set_string(":");
                 }
                 WindowEvent::Key(Key::Down, _, Action::Press, _)
                 | WindowEvent::Key(Key::Down, _, Action::Repeat, _) => {
@@ -753,33 +804,25 @@ impl Window {
             InputMode::Command => match event {
                 WindowEvent::Key(Key::Escape, _, Action::Press, _) => {
                     state.mode = InputMode::Normal;
-                    self.handling_command = None;
-                    self.fuzzy_popup.set_active(false);
+                    self.prompt.set_active(false);
                 }
                 WindowEvent::Char(c) => {
-                    self.fuzzy_popup.insert(c);
-                    self.fuzzy_popup.re_filter();
-                }
-                WindowEvent::Key(Key::Up, _, Action::Press, _)
-                | WindowEvent::Key(Key::Up, _, Action::Repeat, _) => {
-                    self.fuzzy_popup.up_key();
-                }
-                WindowEvent::Key(Key::Down, _, Action::Press, _)
-                | WindowEvent::Key(Key::Down, _, Action::Repeat, _) => {
-                    self.fuzzy_popup.down_key();
+                    self.prompt.insert(c);
                 }
                 WindowEvent::Key(Key::Tab, _, Action::Press, _)
                 | WindowEvent::Key(Key::Tab, _, Action::Repeat, _) => {
-                    self.fuzzy_popup.tab_key();
-                    self.fuzzy_popup.re_filter();
+                    // TODO: Completions
                 }
                 WindowEvent::Key(Key::Backspace, _, Action::Press, _)
                 | WindowEvent::Key(Key::Backspace, _, Action::Repeat, _) => {
-                    self.fuzzy_popup.delete_left();
-                    self.fuzzy_popup.re_filter();
+                    self.prompt.delete_left();
+                    if self.prompt.get_string().len() == 0 {
+                        state.mode = InputMode::Normal;
+                        self.prompt.set_active(false);
+                    }
                 }
                 WindowEvent::Key(Key::Enter, _, Action::Press, _) => {
-                    self.handle_command(self.fuzzy_popup.get_selection());
+                    self.handle_command();
                 }
                 _ => {}
             },

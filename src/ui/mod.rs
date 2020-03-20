@@ -12,6 +12,7 @@ mod context;
 mod fuzzy_popup;
 mod glyphrender;
 mod opengl;
+mod prompt;
 mod quad;
 pub(crate) mod text;
 mod textview;
