@@ -31,8 +31,11 @@ impl RustSyntax {
 impl SyntaxBackend for RustSyntax {
     fn start_of_line(&mut self, linum: usize) {
         self.linum = linum;
-        if linum >= self.states.len() {
+        if self.states.len() == 0 {
             self.states.push((State::Base, State::Base));
+        } else if linum >= self.states.len() {
+            let prev = self.states[self.states.len() - 1].1;
+            self.states.push((prev, prev));
         } else if linum == 0 {
             self.states[linum] = (State::Base, State::Base);
         } else {
