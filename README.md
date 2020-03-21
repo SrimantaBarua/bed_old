@@ -4,6 +4,7 @@ A not-very-hackable text editor that I am writing for my personal use.
 
 Current features -
 
+- Vim-style modal editing
 - Initial syntax highlighting (mostly works for Rust and TOML now)
 - Fuzzy file search within current directory
 - YAML config file (can configure themes, indentation, fonts etc.)
