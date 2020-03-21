@@ -11,7 +11,7 @@ use crate::font::FontCore;
 use crate::types::{PixelSize, TextPitch, TextStyle, DPI};
 
 use super::context::ActiveRenderCtx;
-use super::text::{ShapedTextLine, TextCursorStyle, TextLine, TextSpan};
+use super::text::{ShapedTextLine, TextCursorStyle, TextSpan};
 
 pub(super) struct Prompt {
     is_active: bool,
@@ -19,6 +19,8 @@ pub(super) struct Prompt {
     height: u32,
     font_core: Rc<RefCell<FontCore>>,
     config: Rc<RefCell<Cfg>>,
+    history: Vec<String>,
+    hist_idx: usize,
     buffer: String,
     shaped: ShapedTextLine,
     cursor_bidx: usize,
@@ -39,6 +41,8 @@ impl Prompt {
             font_core: font_core,
             config: config,
             is_active: false,
+            history: vec![],
+            hist_idx: 0,
             buffer: String::new(),
             shaped: ShapedTextLine::default(),
             cursor_bidx: 0,
@@ -110,21 +114,62 @@ impl Prompt {
 
     pub(super) fn set_active(&mut self, val: bool) {
         self.is_active = val;
+        self.hist_idx = self.history.len();
     }
 
     pub(super) fn set_string(&mut self, s: &str) {
         self.buffer.replace_range(.., s);
         self.cursor_bidx = s.len();
         self.cursor_gidx = bidx_to_gidx(&self.buffer, self.cursor_bidx);
+        self.hist_idx = self.history.len();
         self.refresh();
+    }
+
+    pub(super) fn push_to_history(&mut self) {
+        self.history.push(self.buffer.clone());
+        self.hist_idx = self.history.len();
     }
 
     pub(super) fn get_string(&self) -> &str {
         &self.buffer
     }
 
+    pub(super) fn up_key(&mut self) {
+        if self.hist_idx > 0 {
+            self.hist_idx -= 1;
+            self.buffer = self.history[self.hist_idx].clone();
+            self.cursor_bidx = self.buffer.len();
+            self.cursor_gidx = bidx_to_gidx(&self.buffer, self.cursor_bidx);
+            self.refresh();
+        }
+    }
+
+    pub(super) fn down_key(&mut self) {
+        if self.hist_idx + 1 < self.history.len() {
+            self.hist_idx += 1;
+            self.buffer = self.history[self.hist_idx].clone();
+            self.cursor_bidx = self.buffer.len();
+            self.cursor_gidx = bidx_to_gidx(&self.buffer, self.cursor_bidx);
+            self.refresh();
+        }
+    }
+
+    pub(super) fn left_key(&mut self) {
+        let i = prev_grapheme_boundary(&self.buffer, self.cursor_bidx);
+        if i > 0 {
+            self.cursor_bidx = i;
+            self.cursor_gidx = bidx_to_gidx(&self.buffer, self.cursor_bidx);
+        }
+    }
+
+    pub(super) fn right_key(&mut self) {
+        let i = next_grapheme_boundary(&self.buffer, self.cursor_bidx);
+        self.cursor_bidx = i;
+        self.cursor_gidx = bidx_to_gidx(&self.buffer, self.cursor_bidx);
+    }
+
     pub(super) fn insert(&mut self, c: char) {
-        self.buffer.push(c);
+        self.buffer.insert(self.cursor_bidx, c);
         self.cursor_bidx = next_grapheme_boundary(&self.buffer, self.cursor_bidx);
         self.cursor_gidx = bidx_to_gidx(&self.buffer, self.cursor_bidx);
         self.refresh();
@@ -143,10 +188,11 @@ impl Prompt {
             self.cursor_bidx = i;
         }
         self.buffer.remove(self.cursor_bidx);
+        let buf = &self.buffer;
         if !is_grapheme_boundary(&self.buffer, self.cursor_bidx) {
-            self.cursor_bidx = next_grapheme_boundary(&self.buffer, self.cursor_bidx);
+            self.cursor_bidx = next_grapheme_boundary(buf, self.cursor_bidx);
         }
-        self.cursor_gidx = bidx_to_gidx(&self.buffer, self.cursor_bidx);
+        self.cursor_gidx = bidx_to_gidx(buf, self.cursor_bidx);
         self.refresh();
     }
 
@@ -199,6 +245,11 @@ fn is_grapheme_boundary(s: &str, idx: usize) -> bool {
 fn next_grapheme_boundary(s: &str, idx: usize) -> usize {
     let mut gc = GraphemeCursor::new(idx, s.len(), true);
     gc.next_boundary(s, 0).unwrap().unwrap_or(s.len())
+}
+
+fn prev_grapheme_boundary(s: &str, idx: usize) -> usize {
+    let mut gc = GraphemeCursor::new(idx, s.len(), true);
+    gc.prev_boundary(s, 0).unwrap().unwrap_or(0)
 }
 
 fn bidx_to_gidx(s: &str, bidx: usize) -> usize {

@@ -287,19 +287,13 @@ impl Window {
         let mut iter = prompt_s.split_whitespace();
         match iter.next() {
             Some(":q") | Some(":quit") => {
-                self.input_state.mode = InputMode::Normal;
-                self.prompt.set_active(false);
                 self.set_should_close(true);
             }
             Some(":bn") | Some(":bnext") => {
                 self.textview.next_buffer();
-                self.input_state.mode = InputMode::Normal;
-                self.prompt.set_active(false);
             }
             Some(":bp") | Some(":bprevious") => {
                 self.textview.prev_buffer();
-                self.input_state.mode = InputMode::Normal;
-                self.prompt.set_active(false);
             }
             Some(":e") | Some(":edit") => match iter.next() {
                 Some(fname) => {
@@ -329,18 +323,10 @@ impl Window {
                             println!("failed to open file: {:?}: {}", path, e);
                         }
                     }
-                    self.input_state.mode = InputMode::Normal;
-                    self.prompt.set_active(false);
                 }
-                _ => {
-                    self.input_state.mode = InputMode::Normal;
-                    self.prompt.set_active(false);
-                }
+                _ => {}
             },
-            _ => {
-                self.input_state.mode = InputMode::Normal;
-                self.prompt.set_active(false);
-            }
+            _ => {}
         }
     }
 
@@ -809,6 +795,22 @@ impl Window {
                 WindowEvent::Char(c) => {
                     self.prompt.insert(c);
                 }
+                WindowEvent::Key(Key::Up, _, Action::Press, _)
+                | WindowEvent::Key(Key::Up, _, Action::Repeat, _) => {
+                    self.prompt.up_key();
+                }
+                WindowEvent::Key(Key::Down, _, Action::Press, _)
+                | WindowEvent::Key(Key::Down, _, Action::Repeat, _) => {
+                    self.prompt.down_key();
+                }
+                WindowEvent::Key(Key::Left, _, Action::Press, _)
+                | WindowEvent::Key(Key::Left, _, Action::Repeat, _) => {
+                    self.prompt.left_key();
+                }
+                WindowEvent::Key(Key::Right, _, Action::Press, _)
+                | WindowEvent::Key(Key::Right, _, Action::Repeat, _) => {
+                    self.prompt.right_key();
+                }
                 WindowEvent::Key(Key::Tab, _, Action::Press, _)
                 | WindowEvent::Key(Key::Tab, _, Action::Repeat, _) => {
                     // TODO: Completions
@@ -817,12 +819,15 @@ impl Window {
                 | WindowEvent::Key(Key::Backspace, _, Action::Repeat, _) => {
                     self.prompt.delete_left();
                     if self.prompt.get_string().len() == 0 {
-                        state.mode = InputMode::Normal;
                         self.prompt.set_active(false);
+                        state.mode = InputMode::Normal;
                     }
                 }
                 WindowEvent::Key(Key::Enter, _, Action::Press, _) => {
                     self.handle_command();
+                    self.prompt.push_to_history();
+                    self.prompt.set_active(false);
+                    self.input_state.mode = InputMode::Normal;
                 }
                 _ => {}
             },
