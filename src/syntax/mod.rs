@@ -153,7 +153,7 @@ impl Syntax {
         backend.remove_lines(range);
     }
 
-    pub(crate) fn name(&self) -> &str {
+    pub(crate) fn name(&self) -> &'static str {
         match self {
             Syntax::C(c) => "c",
             Syntax::Rust(r) => "rust",

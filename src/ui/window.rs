@@ -320,12 +320,47 @@ impl Window {
                             self.textview.add_buffer(buffer, view_id);
                         }
                         Err(e) => {
-                            println!("failed to open file: {:?}: {}", path, e);
+                            eprintln!("failed to open file: {:?}: {}", path, e);
                         }
                     }
                 }
                 _ => {}
             },
+            Some(":w") | Some(":write") => {
+                let res = if let Some(fname) = iter.next() {
+                    let path = Path::new(fname);
+                    let path = if path.has_root() {
+                        path.to_path_buf()
+                    } else if path.starts_with("~") {
+                        let path = path.strip_prefix("~").unwrap();
+                        let mut buf = BaseDirs::new()
+                            .expect("failed to get base dirs")
+                            .home_dir()
+                            .to_path_buf();
+                        buf.push(path);
+                        buf
+                    } else {
+                        let mut buf = self.working_directory.clone();
+                        buf.push(path);
+                        buf
+                    };
+                    self.textview.write_buffer(Some(
+                        path.to_str()
+                            .expect("failed to get text representation of path"),
+                    ))
+                } else {
+                    self.textview.write_buffer(None)
+                };
+                match res {
+                    Some(Err(e)) => {
+                        eprintln!("failed to write buffer: {}", e);
+                    }
+                    None => {
+                        eprintln!("no path provided for writing buffer");
+                    }
+                    _ => {}
+                }
+            }
             _ => {}
         }
     }

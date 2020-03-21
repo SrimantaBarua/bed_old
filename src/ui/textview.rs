@@ -2,6 +2,7 @@
 
 use std::cell::RefCell;
 use std::cmp::{max, min};
+use std::io::Result as IOResult;
 use std::rc::Rc;
 
 use euclid::{point2, size2, Rect, Size2D};
@@ -90,6 +91,11 @@ impl TextView {
             cursor: cursor,
         });
         self.cur_view_idx += 1;
+    }
+
+    pub(super) fn write_buffer(&mut self, optpath: Option<&str>) -> Option<IOResult<()>> {
+        let buffer = &mut *self.views[self.cur_view_idx].buffer.borrow_mut();
+        buffer.write_to_file(optpath)
     }
 
     pub(super) fn prev_buffer(&mut self) {

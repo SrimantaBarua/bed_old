@@ -234,6 +234,31 @@ impl Buffer {
         }
     }
 
+    /// Write buffer to file
+    pub(crate) fn write_to_file(&mut self, optpath: Option<&str>) -> Option<IOResult<()>> {
+        if let Some(path) = optpath {
+            self.path = Some(path.to_owned());
+            let syntax = Syntax::from_path(path);
+            if self.syntax.name() != syntax.name() {
+                let (tabsize, indent_tabs) = {
+                    let cfg = &*self.config.borrow();
+                    let cfgsyn = cfg.syntax(syntax.name());
+                    (cfgsyn.tab_width as usize, cfgsyn.indent_tabs)
+                };
+                self.tabsize = tabsize;
+                self.indent_tabs = indent_tabs;
+                self.syntax = syntax;
+                for (_, _, t) in &mut self.dpi_shaped_lines {
+                    t.clear();
+                }
+                self.format_lines_from(0, None);
+            }
+        }
+        self.path
+            .as_ref()
+            .map(|path| File::create(path).and_then(|f| self.data.write_to(f)))
+    }
+
     /// Number of lines in buffer
     pub(crate) fn len_lines(&self) -> usize {
         self.data.len_lines()
