@@ -265,6 +265,7 @@ impl<'a> Lexer<'a> {
                 }
             }
             (_, '0') => (RustTok::Num, bin_num_or_float(self.s)),
+            (_, c) if c.is_digit(10) => (RustTok::Num, dec_num_or_float(self.s)),
             (_, c) if c.is_whitespace() => loop {
                 if let Some((i, c)) = iter.next() {
                     if !c.is_whitespace() {
@@ -274,7 +275,6 @@ impl<'a> Lexer<'a> {
                     break (RustTok::Space, self.s.len());
                 }
             },
-            (_, c) if c.is_digit(10) => (RustTok::Num, dec_num_or_float(self.s)),
             (_, c) if c == '_' || c.is_alphabetic() => loop {
                 if let Some((i, c)) = iter.next() {
                     if c != '_' && !c.is_alphanumeric() {
@@ -307,7 +307,8 @@ fn bin_num_or_float(s: &str) -> usize {
         b'b' | b'B' => {
             if bytes[2] == b'0' || bytes[2] == b'1' {
                 let mut len = 3;
-                while len < bytes.len() && (bytes[len] == b'0' || bytes[len] == b'1') {
+				// TODO: Re-evaluate terminating underscore highlighting
+                while len < bytes.len() && (bytes[len] == b'0' || bytes[len] == b'1' || bytes[len] == b'_') {
                     len += 1;
                 }
                 len
@@ -318,7 +319,8 @@ fn bin_num_or_float(s: &str) -> usize {
         b'o' | b'O' => {
             if bytes[2].is_ascii_digit() && bytes[2] < b'8' {
                 let mut len = 3;
-                while len < bytes.len() && (bytes[len].is_ascii_digit() && bytes[len] < b'8') {
+				// TODO: Re-evaluate terminating underscore highlighting
+                while len < bytes.len() && (bytes[len] == b'_' || (bytes[len].is_ascii_digit() && bytes[len] < b'8')) {
                     len += 1;
                 }
                 len
@@ -329,7 +331,8 @@ fn bin_num_or_float(s: &str) -> usize {
         b'x' | b'X' => {
             if bytes[2].is_ascii_hexdigit() {
                 let mut len = 3;
-                while len < bytes.len() && bytes[len].is_ascii_hexdigit() {
+                // TODO: Re-evaluate terminating underscore highlighting
+                while len < bytes.len() && (bytes[len] == b'_' || bytes[len].is_ascii_hexdigit()) {
                     len += 1;
                 }
                 len
@@ -345,7 +348,8 @@ fn bin_num_or_float(s: &str) -> usize {
 fn dec_num_or_float(s: &str) -> usize {
     let mut len = 1;
     let bytes = s.as_bytes();
-    while len < bytes.len() && bytes[len].is_ascii_digit() {
+    // TODO: Re-evalute terminating underscore highlighting
+    while len < bytes.len() && (bytes[len] == b'_' || bytes[len].is_ascii_digit()) {
         len += 1;
     }
     len + float_len_from_decimal(&s[len..])
@@ -353,11 +357,12 @@ fn dec_num_or_float(s: &str) -> usize {
 
 fn float_len_from_decimal(s: &str) -> usize {
     let bytes = s.as_bytes();
+    // TODO: Re-evaluate highlighting of underscore in floats
     if bytes.len() < 2 || bytes[0] != b'.' || !bytes[1].is_ascii_digit() {
         return 0;
     }
     let mut len = 2;
-    while len < bytes.len() && bytes[len].is_ascii_digit() {
+    while len < bytes.len() && (bytes[len] == b'_' || bytes[len].is_ascii_digit()) {
         len += 1;
     }
     len
