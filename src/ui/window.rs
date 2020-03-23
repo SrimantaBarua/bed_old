@@ -43,6 +43,18 @@ fn get_viewable_rect(window: &glfw::Window) -> Rect<u32, PixelSize> {
     rect.inner_rect(off).cast()
 }
 
+#[cfg(not(target_os = "windows"))]
+fn scale_point_to_viewable(_window: &glfw::Window, point: (f64, f64)) -> (f64, f64) {
+    point
+}
+
+#[cfg(target_os = "windows")]
+fn scale_point_to_viewable(window: &glfw::Window, point: (f64, f64)) -> (f64, f64) {
+    let (w, h) = window.get_framebuffer_size();
+    let vrect = get_viewable_rect(window);
+    (point.0 * vrect.size.width as f64 / w as f64, point.1 * vrect.size.height as f64 / h as f64)
+}
+
 pub(crate) struct Window {
     window: glfw::Window,
     render_ctx: RenderCtx,
@@ -209,7 +221,9 @@ impl Window {
             match event {
                 WindowEvent::FramebufferSize(w, h) => self.resize(size2(w as u32, h as u32)),
                 WindowEvent::MouseButton(glfw::MouseButtonLeft, Action::Press, _) => {
-                    let (x, y) = self.window.get_cursor_pos();
+                    let point = self.window.get_cursor_pos();
+                    // windows-only scale
+                    let (x, y) = scale_point_to_viewable(&self.window, point);
                     self.textview.move_cursor_to_point((x as i32, y as i32));
                 }
                 WindowEvent::Scroll(x, y) => {
