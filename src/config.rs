@@ -288,7 +288,7 @@ impl Default for CfgUiThemeFuzzy {
             select_color: Color::new(0, 0, 0, 196),
             select_match_color: Color::new(255, 0, 0, 196),
             select_background_color: Color::new(0, 0, 0, 32),
-            cursor_color: Color::new(255, 255, 255, 255),
+            cursor_color: Color::new(0, 0, 0, 255),
             edge_padding: 10,
         }
     }
@@ -303,27 +303,27 @@ impl CfgUiThemeFuzzy {
         let fgcol = yaml["foreground_color"]
             .as_str()
             .and_then(|s| Color::parse(s))
-            .unwrap_or(Color::new(0, 0, 0, 255));
+            .unwrap_or(Color::new(0, 0, 0, 96));
         let labelcol = yaml["label_color"]
             .as_str()
             .and_then(|s| Color::parse(s))
-            .unwrap_or(Color::new(255, 255, 255, 255));
+            .unwrap_or(Color::new(0, 0, 0, 196));
         let matchcol = yaml["match_color"]
             .as_str()
             .and_then(|s| Color::parse(s))
-            .unwrap_or(Color::new(0, 0, 0, 255));
+            .unwrap_or(Color::new(255, 0, 0, 196));
         let selectcol = yaml["select_color"]
             .as_str()
             .and_then(|s| Color::parse(s))
-            .unwrap_or(Color::new(255, 255, 255, 255));
+            .unwrap_or(Color::new(0, 0, 0, 196));
         let selectmatchcol = yaml["select_match_color"]
             .as_str()
             .and_then(|s| Color::parse(s))
-            .unwrap_or(Color::new(0, 0, 0, 255));
+            .unwrap_or(Color::new(255, 0, 0, 196));
         let selectbgcol = yaml["select_background_color"]
             .as_str()
             .and_then(|s| Color::parse(s))
-            .unwrap_or(Color::new(255, 255, 255, 255));
+            .unwrap_or(Color::new(0, 0, 0, 32));
         let cursorcol = yaml["cursor_color"]
             .as_str()
             .and_then(|s| Color::parse(s))
@@ -356,7 +356,7 @@ impl Default for CfgUiThemePrompt {
         CfgUiThemePrompt {
             background_color: Color::new(255, 255, 255, 255),
             foreground_color: Color::new(0, 0, 0, 96),
-            cursor_color: Color::new(255, 255, 255, 255),
+            cursor_color: Color::new(0, 0, 0, 255),
             edge_padding: 10,
         }
     }
