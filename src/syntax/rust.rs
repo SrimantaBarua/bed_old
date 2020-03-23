@@ -250,9 +250,47 @@ impl<'a> Lexer<'a> {
             },
             (_, '*') => match iter.next() {
                 Some((_, '/')) => (RustTok::BlockCommentEnd, 2),
-                // TODO other mul ops
+                Some((_, '=')) => (RustTok::Op, 2),
                 _ => (RustTok::Op, 1),
             },
+            (_, '+') | (_, '%') | (_, '^') | (_, '!') => match iter.next() {
+                Some((_, '=')) => (RustTok::Op, 2),
+                _ => (RustTok::Op, 1),
+            },
+            (_, '-') => match iter.next() {
+                Some((_, '=')) => (RustTok::Op, 2),
+                // TODO: ->
+                _ => (RustTok::Op, 1),
+            }
+			(_, '=') => match iter.next() {
+				Some((_, '=')) => (RustTok::Op, 2),
+				// TODO: =>
+				_ => (RustTok::Op, 1),
+			}
+            (_, '|') => match iter.next() {
+                Some((_, '|')) | Some((_, '=')) => (RustTok::Op, 2),
+                _ => (RustTok::Op, 1),
+            }
+            (_, '&') => match iter.next() {
+                Some((_, '&')) | Some((_, '=')) => (RustTok::Op, 2),
+                _ => (RustTok::Op, 1),
+            }
+            (_, '>') => match iter.next() {
+                Some((_, '>')) => match iter.next() {
+                    Some((_, '=')) => (RustTok::Op, 3),
+                    _ => (RustTok::Op, 2),
+                }
+                Some((_, '=')) => (RustTok::Op, 2),
+                _ => (RustTok::Op, 1)
+            }
+            (_, '<') => match iter.next() {
+                Some((_, '<')) => match iter.next() {
+                    Some((_, '=')) => (RustTok::Op, 3),
+                    _ => (RustTok::Op, 2),
+                }
+                Some((_, '=')) => (RustTok::Op, 2),
+                _ => (RustTok::Op, 1)
+            }
             // TODO raw strings etc
             // TODO multi-line strings
             (_, '"') => (RustTok::OpDoubleQuote, 1),
