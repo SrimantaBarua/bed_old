@@ -239,7 +239,6 @@ impl<'a> Lexer<'a> {
     fn next(&mut self) -> Option<(RustTok, usize)> {
         let mut iter = self.s.char_indices().peekable();
         let (typ, i) = match iter.next()? {
-            (_, '&') => (RustTok::OpAmp, 1),
             (_, '(') => (RustTok::OpLp, 1),
             (_, '/') => match iter.next() {
                 // TODO doc comment
@@ -261,36 +260,36 @@ impl<'a> Lexer<'a> {
                 Some((_, '=')) => (RustTok::Op, 2),
                 // TODO: ->
                 _ => (RustTok::Op, 1),
-            }
-			(_, '=') => match iter.next() {
-				Some((_, '=')) => (RustTok::Op, 2),
-				// TODO: =>
-				_ => (RustTok::Op, 1),
-			}
+            },
+            (_, '=') => match iter.next() {
+                Some((_, '=')) => (RustTok::Op, 2),
+                Some((_, '>')) => (RustTok::Op, 2),
+                _ => (RustTok::Op, 1),
+            },
             (_, '|') => match iter.next() {
                 Some((_, '|')) | Some((_, '=')) => (RustTok::Op, 2),
                 _ => (RustTok::Op, 1),
-            }
+            },
             (_, '&') => match iter.next() {
                 Some((_, '&')) | Some((_, '=')) => (RustTok::Op, 2),
-                _ => (RustTok::Op, 1),
-            }
+                _ => (RustTok::OpAmp, 1),
+            },
             (_, '>') => match iter.next() {
                 Some((_, '>')) => match iter.next() {
                     Some((_, '=')) => (RustTok::Op, 3),
                     _ => (RustTok::Op, 2),
-                }
+                },
                 Some((_, '=')) => (RustTok::Op, 2),
-                _ => (RustTok::Op, 1)
-            }
+                _ => (RustTok::Op, 1),
+            },
             (_, '<') => match iter.next() {
                 Some((_, '<')) => match iter.next() {
                     Some((_, '=')) => (RustTok::Op, 3),
                     _ => (RustTok::Op, 2),
-                }
+                },
                 Some((_, '=')) => (RustTok::Op, 2),
-                _ => (RustTok::Op, 1)
-            }
+                _ => (RustTok::Op, 1),
+            },
             // TODO raw strings etc
             // TODO multi-line strings
             (_, '"') => (RustTok::OpDoubleQuote, 1),
@@ -345,8 +344,10 @@ fn bin_num_or_float(s: &str) -> usize {
         b'b' | b'B' => {
             if bytes[2] == b'0' || bytes[2] == b'1' {
                 let mut len = 3;
-				// TODO: Re-evaluate terminating underscore highlighting
-                while len < bytes.len() && (bytes[len] == b'0' || bytes[len] == b'1' || bytes[len] == b'_') {
+                // TODO: Re-evaluate terminating underscore highlighting
+                while len < bytes.len()
+                    && (bytes[len] == b'0' || bytes[len] == b'1' || bytes[len] == b'_')
+                {
                     len += 1;
                 }
                 len
@@ -357,8 +358,10 @@ fn bin_num_or_float(s: &str) -> usize {
         b'o' | b'O' => {
             if bytes[2].is_ascii_digit() && bytes[2] < b'8' {
                 let mut len = 3;
-				// TODO: Re-evaluate terminating underscore highlighting
-                while len < bytes.len() && (bytes[len] == b'_' || (bytes[len].is_ascii_digit() && bytes[len] < b'8')) {
+                // TODO: Re-evaluate terminating underscore highlighting
+                while len < bytes.len()
+                    && (bytes[len] == b'_' || (bytes[len].is_ascii_digit() && bytes[len] < b'8'))
+                {
                     len += 1;
                 }
                 len

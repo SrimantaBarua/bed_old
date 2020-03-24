@@ -49,8 +49,12 @@ impl Core {
             }
             Ok(buffer.clone())
         } else {
-            let buffer = Buffer::from_file(path, dpi, self.font_core.clone(), self.config.clone())
-                .map(|b| Rc::new(RefCell::new(b)))?;
+            let buffer = Rc::new(RefCell::new(Buffer::from_file(
+                path,
+                dpi,
+                self.font_core.clone(),
+                self.config.clone(),
+            )));
             self.buffers.insert(path.to_owned(), buffer.clone());
             Ok(buffer)
         }

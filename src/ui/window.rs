@@ -52,7 +52,10 @@ fn scale_point_to_viewable(_window: &glfw::Window, point: (f64, f64)) -> (f64, f
 fn scale_point_to_viewable(window: &glfw::Window, point: (f64, f64)) -> (f64, f64) {
     let (w, h) = window.get_framebuffer_size();
     let vrect = get_viewable_rect(window);
-    (point.0 * vrect.size.width as f64 / w as f64, point.1 * vrect.size.height as f64 / h as f64)
+    (
+        point.0 * vrect.size.width as f64 / w as f64,
+        point.1 * vrect.size.height as f64 / h as f64,
+    )
 }
 
 pub(crate) struct Window {

@@ -174,30 +174,29 @@ impl Buffer {
         initial_dpi: Size2D<u32, DPI>,
         font_core: Rc<RefCell<FontCore>>,
         config: Rc<RefCell<Cfg>>,
-    ) -> IOResult<Buffer> {
-        File::open(path)
+    ) -> Buffer {
+        let rope = File::open(path)
             .and_then(|f| Rope::from_reader(f))
-            .map(|r| {
-                let syntax = Syntax::from_path(path);
-                let (tabsize, indent_tabs) = {
-                    let cfg = &*config.borrow();
-                    let cfgsyn = cfg.syntax(syntax.name());
-                    (cfgsyn.tab_width as usize, cfgsyn.indent_tabs)
-                };
-                let mut ret = Buffer {
-                    data: r,
-                    cursors: HashMap::new(),
-                    path: Some(path.to_owned()),
-                    tabsize: tabsize,
-                    indent_tabs: indent_tabs,
-                    dpi_shaped_lines: vec![(initial_dpi, Vec::new(), Vec::new())],
-                    syntax: syntax,
-                    config: config.clone(),
-                    font_core: font_core,
-                };
-                ret.format_lines_from(0, None);
-                ret
-            })
+            .unwrap_or(Rope::new());
+        let syntax = Syntax::from_path(path);
+        let (tabsize, indent_tabs) = {
+            let cfg = &*config.borrow();
+            let cfgsyn = cfg.syntax(syntax.name());
+            (cfgsyn.tab_width as usize, cfgsyn.indent_tabs)
+        };
+        let mut ret = Buffer {
+            data: rope,
+            cursors: HashMap::new(),
+            path: Some(path.to_owned()),
+            tabsize: tabsize,
+            indent_tabs: indent_tabs,
+            dpi_shaped_lines: vec![(initial_dpi, Vec::new(), Vec::new())],
+            syntax: syntax,
+            config: config.clone(),
+            font_core: font_core,
+        };
+        ret.format_lines_from(0, None);
+        ret
     }
 
     /// Reload buffer contents and reset all cursors
