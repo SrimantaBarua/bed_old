@@ -155,11 +155,11 @@ impl Syntax {
 
     pub(crate) fn name(&self) -> &'static str {
         match self {
-            Syntax::C(c) => "c",
-            Syntax::Rust(r) => "rust",
-            Syntax::TOML(t) => "toml",
-            Syntax::Markdown(m) => "markdown",
-            Syntax::Default(d) => "default",
+            Syntax::C(_) => "c",
+            Syntax::Rust(_) => "rust",
+            Syntax::TOML(_) => "toml",
+            Syntax::Markdown(_) => "markdown",
+            Syntax::Default(_) => "default",
         }
     }
 

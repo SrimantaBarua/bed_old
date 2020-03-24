@@ -115,11 +115,11 @@ impl TextSize {
         size2(val * dpi.width as f32, val * dpi.height as f32)
     }
 
-    pub(crate) fn scale() -> f32 {
+    fn scale() -> f32 {
         4.0
     }
 
-    pub(crate) fn shift() -> usize {
+    fn shift() -> usize {
         2
     }
 }

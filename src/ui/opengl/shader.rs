@@ -1,7 +1,6 @@
 // (C) 2020 Srimanta Barua <srimanta.barua1@gmail.com>
 
 use std::ffi::CStr;
-use std::marker::PhantomData;
 use std::ops::Drop;
 use std::rc::Rc;
 use std::str;

@@ -133,6 +133,7 @@ impl SyntaxBackend for RustSyntax {
                 }
                 (RustTok::Key, i) | (RustTok::KeyMut, i) => Some(Tok::keyword(&s[..i])),
                 (RustTok::KeyTyp, i) => Some(Tok::data_type(&s[..i])),
+                (RustTok::Separator, i) => Some(Tok::separator(&s[..i])),
                 (RustTok::BlockCommentEnd, i)
                 | (RustTok::Space, i)
                 | (RustTok::Misc, i)
@@ -214,6 +215,7 @@ enum RustTok {
     EscapedChar,
     Num,
     Ident,
+    Separator,
     OpLp,
     OpAmp,
     OpDoubleQuote,
@@ -240,6 +242,7 @@ impl<'a> Lexer<'a> {
         let mut iter = self.s.char_indices().peekable();
         let (typ, i) = match iter.next()? {
             (_, '(') => (RustTok::OpLp, 1),
+            (_, ';') | (_, ',') => (RustTok::Separator, 1),
             (_, '/') => match iter.next() {
                 // TODO doc comment
                 Some((_, '*')) => (RustTok::BlockCommentStart, 2),
@@ -322,7 +325,6 @@ impl<'a> Lexer<'a> {
                 }
             },
             _ => {
-                // TODO Remove this
                 if let Some((i, _)) = iter.next() {
                     (RustTok::Misc, i)
                 } else {

@@ -19,9 +19,9 @@ impl SyntaxBackend for MarkdownSyntax {
         true
     }
 
-    fn insert_lines(&mut self, linum: usize, nlines: usize) {}
+    fn insert_lines(&mut self, _linum: usize, _nlines: usize) {}
 
-    fn remove_lines(&mut self, range: Range<usize>) {}
+    fn remove_lines(&mut self, _range: Range<usize>) {}
 
     fn next_tok<'a>(&mut self, s: &'a str) -> Option<Tok<'a>> {
         if s.len() == 0 {
