@@ -108,13 +108,11 @@ impl SyntaxBackend for CSyntax {
                 loop {
                     match lex.next() {
                         Some((CTok::BlockCommentEnd, j)) => {
-                            break Some(Tok::comment(&s[..(i + j)]))
+                            self.states[self.linum].1 = State::Base;
+                            break Some(Tok::comment(&s[..(i + j)]));
                         }
                         Some((_, j)) => i += j,
-                        None => {
-                            self.states[self.linum].1 = State::BlockComment;
-                            break Some(Tok::comment(s));
-                        }
+                        None => break Some(Tok::comment(s)),
                     }
                 }
             }
