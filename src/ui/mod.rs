@@ -16,6 +16,7 @@ mod prompt;
 mod quad;
 pub(crate) mod text;
 mod textview;
+mod textview_tree;
 mod window;
 
 use crate::config::Cfg;

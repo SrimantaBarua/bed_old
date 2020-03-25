@@ -22,7 +22,7 @@ use super::context::RenderCtx;
 use super::fuzzy_popup::FuzzyPopup;
 use super::prompt::Prompt;
 use super::text::TextCursorStyle;
-use super::textview::TextView;
+use super::textview_tree::TextViewTree;
 use crate::font::FontCore;
 
 static CLEAR_COLOR: Color = Color::new(255, 255, 255, 255);
@@ -63,10 +63,9 @@ pub(crate) struct Window {
     render_ctx: RenderCtx,
     glfw: Rc<RefCell<Glfw>>,
     core: Rc<RefCell<Core>>,
-    textview: TextView,
+    textview_tree: TextViewTree,
     prompt: Prompt,
     fuzzy_popup: FuzzyPopup,
-    textview_scroll_v: (f64, f64),
     input_state: InputState,
     font_core: Rc<RefCell<FontCore>>,
     working_directory: PathBuf,
@@ -142,7 +141,7 @@ impl Window {
         let view_id = (&mut *core.borrow_mut()).next_view_id();
         // Initialize text view tree
         let inner_rect = get_viewable_rect(&window);
-        let textview = TextView::new(
+        let textview_tree = TextViewTree::new(
             buffer,
             inner_rect,
             font_core.clone(),
@@ -166,10 +165,9 @@ impl Window {
                 render_ctx: ctx,
                 glfw: glfw,
                 core: core,
-                textview: textview,
+                textview_tree: textview_tree,
                 fuzzy_popup: fuzzy_popup,
                 prompt: prompt,
-                textview_scroll_v: (0.0, 0.0),
                 input_state: InputState::default(),
                 font_core: font_core,
                 working_directory: std::env::current_dir()
@@ -185,39 +183,9 @@ impl Window {
         duration: time::Duration,
     ) -> bool {
         let mut to_refresh = false;
-
-        let (m, g, coeff, mut a) = (0.5, 9.8, 0.3, (0.0, 0.0));
+        let mut scroll_force = (0.0, 0.0);
+        let mut cursor_position = None;
         let time = duration.as_secs_f64() * 100.0;
-
-        // Apply friction
-        let friction_a = g * coeff;
-        let friction_v = friction_a * time;
-        if self.textview_scroll_v.0 < 0.0 {
-            if self.textview_scroll_v.0 >= -friction_v {
-                self.textview_scroll_v.0 = 0.0;
-            } else {
-                self.textview_scroll_v.0 += friction_v;
-            }
-        } else if self.textview_scroll_v.0 > 0.0 {
-            if self.textview_scroll_v.0 <= friction_v {
-                self.textview_scroll_v.0 = 0.0;
-            } else {
-                self.textview_scroll_v.0 -= friction_v;
-            }
-        }
-        if self.textview_scroll_v.1 < 0.0 {
-            if self.textview_scroll_v.1 >= -friction_v {
-                self.textview_scroll_v.1 = 0.0;
-            } else {
-                self.textview_scroll_v.1 += friction_v;
-            }
-        } else if self.textview_scroll_v.1 > 0.0 {
-            if self.textview_scroll_v.1 <= friction_v {
-                self.textview_scroll_v.1 = 0.0;
-            } else {
-                self.textview_scroll_v.1 -= friction_v;
-            }
-        }
 
         for (_, event) in glfw::flush_messages(events) {
             to_refresh = true;
@@ -227,45 +195,26 @@ impl Window {
                     let point = self.window.get_cursor_pos();
                     // windows-only scale
                     let (x, y) = scale_point_to_viewable(&self.window, point);
-                    self.textview.move_cursor_to_point((x as i32, y as i32));
+                    self.textview_tree
+                        .move_cursor_to_point((x as i32, y as i32));
                 }
-                WindowEvent::Scroll(x, y) => {
+                WindowEvent::Scroll(ax, ay) => {
+                    // Get cursor position
+                    let point = self.window.get_cursor_pos();
+                    let (x, y) = scale_point_to_viewable(&self.window, point);
+                    cursor_position = Some((x as i32, y as i32));
                     // Scroll acceleration accumulation
-                    a.0 -= x;
-                    a.1 -= y;
+                    scroll_force.0 -= ax;
+                    scroll_force.1 -= ay;
                 }
                 e => self.handle_event(e),
             }
         }
 
-        a.0 /= m;
-        a.1 /= m;
-
-        // Apply accelation
-        self.textview_scroll_v.0 += time * a.0;
-        self.textview_scroll_v.1 += time * a.1;
-
-        // Calculate delta
-        let mut textview_scroll_sx = time * self.textview_scroll_v.0;
-        let mut textview_scroll_sy = time * self.textview_scroll_v.1;
-        // Round
-        if textview_scroll_sx < 0.0 {
-            textview_scroll_sx = textview_scroll_sx.floor();
-        } else if textview_scroll_sx > 0.0 {
-            textview_scroll_sx = textview_scroll_sx.ceil();
-        }
-        if textview_scroll_sy < 0.0 {
-            textview_scroll_sy = textview_scroll_sy.floor();
-        } else if textview_scroll_sy > 0.0 {
-            textview_scroll_sy = textview_scroll_sy.ceil();
-        }
-
-        // If there is any velocity, we need to refresh
-        let textview_scroll_s = (textview_scroll_sx as i32, textview_scroll_sy as i32);
-        if textview_scroll_s != (0, 0) {
-            to_refresh = true;
-            self.textview.scroll(textview_scroll_s);
-        }
+        // If any view was scrolled, refresh
+        to_refresh |= self
+            .textview_tree
+            .scroll_views(cursor_position, scroll_force, time);
 
         // Update fuzzy finder async if required
         if self.fuzzy_popup.is_active() {
@@ -279,7 +228,7 @@ impl Window {
     pub(crate) fn refresh(&mut self) {
         let mut active_ctx = self.render_ctx.activate(&mut self.window);
         active_ctx.clear();
-        self.textview.draw(&mut active_ctx);
+        self.textview_tree.draw(&mut active_ctx);
 
         if self.fuzzy_popup.is_active() {
             self.fuzzy_popup.draw(&mut active_ctx);
@@ -309,12 +258,12 @@ impl Window {
                 self.input_state.mode = InputMode::Normal;
             }
             Some(":bn") | Some(":bnext") => {
-                self.textview.next_buffer();
+                self.textview_tree.active_mut().next_buffer();
                 self.prompt.set_active(false);
                 self.input_state.mode = InputMode::Normal;
             }
             Some(":bp") | Some(":bprevious") => {
-                self.textview.prev_buffer();
+                self.textview_tree.active_mut().prev_buffer();
                 self.prompt.set_active(false);
                 self.input_state.mode = InputMode::Normal;
             }
@@ -340,7 +289,7 @@ impl Window {
                     match core.new_buffer_from_file(path.to_str().unwrap(), self.render_ctx.dpi) {
                         Ok(buffer) => {
                             let view_id = core.next_view_id();
-                            self.textview.add_buffer(buffer, view_id);
+                            self.textview_tree.active_mut().add_buffer(buffer, view_id);
                         }
                         Err(e) => {
                             eprintln!("failed to open file: {:?}: {}", path, e);
@@ -354,6 +303,18 @@ impl Window {
                     self.input_state.mode = InputMode::Normal;
                 }
             },
+            Some(":vsp") | Some(":vsplit") => {
+                let core = &mut *self.core.borrow_mut();
+                self.textview_tree.split_h(core.next_view_id());
+                self.prompt.set_active(false);
+                self.input_state.mode = InputMode::Normal;
+            }
+            Some(":sp") | Some(":split") => {
+                let core = &mut *self.core.borrow_mut();
+                self.textview_tree.split_v(core.next_view_id());
+                self.prompt.set_active(false);
+                self.input_state.mode = InputMode::Normal;
+            }
             Some(":w") | Some(":write") => {
                 let res = if let Some(fname) = iter.next() {
                     let path = Path::new(fname);
@@ -372,12 +333,12 @@ impl Window {
                         buf.push(path);
                         buf
                     };
-                    self.textview.write_buffer(Some(
+                    self.textview_tree.active_mut().write_buffer(Some(
                         path.to_str()
                             .expect("failed to get text representation of path"),
                     ))
                 } else {
-                    self.textview.write_buffer(None)
+                    self.textview_tree.active_mut().write_buffer(None)
                 };
                 match res {
                     Some(Err(e)) => {
@@ -437,7 +398,7 @@ impl Window {
             match core.new_buffer_from_file(path.to_str().unwrap(), self.render_ctx.dpi) {
                 Ok(buffer) => {
                     let view_id = core.next_view_id();
-                    self.textview.add_buffer(buffer, view_id);
+                    self.textview_tree.active_mut().add_buffer(buffer, view_id);
                 }
                 Err(e) => {
                     println!("failed to open file: {:?}: {}", path, e);
@@ -451,14 +412,14 @@ impl Window {
     fn resize(&mut self, size: Size2D<u32, PixelSize>) {
         let vrect = get_viewable_rect(&self.window);
         self.render_ctx.set_size(size);
-        self.textview.set_rect(vrect);
+        self.textview_tree.set_rect(vrect);
         self.fuzzy_popup.set_window_rect(vrect);
         self.prompt.set_window_rect(vrect);
     }
 
     fn handle_event(&mut self, event: WindowEvent) {
         let mut state = &mut self.input_state;
-        let textview = &mut self.textview;
+        let textview = self.textview_tree.active_mut();
         match state.mode {
             InputMode::Insert => match event {
                 WindowEvent::Key(Key::Escape, _, Action::Press, _) => {

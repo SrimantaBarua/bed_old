@@ -15,6 +15,12 @@ use crate::types::{PixelSize, DPI};
 use super::context::ActiveRenderCtx;
 use super::text::{ShapedTextLine, TextCursorStyle};
 
+const M: f64 = 0.5;
+const G: f64 = 9.8;
+const COEFF: f64 = 0.3;
+const FRICTION_A: f64 = M * G * COEFF;
+
+#[derive(Clone)]
 struct View {
     xbase: u32,
     ybase: u32,
@@ -25,6 +31,7 @@ struct View {
     cursor: BufferCursor,
 }
 
+#[derive(Clone)]
 pub(super) struct TextView {
     views: Vec<View>,
     cur_view_idx: usize,
@@ -32,6 +39,7 @@ pub(super) struct TextView {
     line_numbers: bool,
     relative_number: bool,
     dpi: Size2D<u32, DPI>,
+    scroll_v: (f64, f64),
     font_core: Rc<RefCell<FontCore>>,
     config: Rc<RefCell<Cfg>>,
     cursor_style: TextCursorStyle,
@@ -66,12 +74,44 @@ impl TextView {
             views: views,
             cur_view_idx: 0,
             rect: rect,
+            scroll_v: (0.0, 0.0),
             font_core: font_core,
             dpi: dpi,
             line_numbers: line_numbers,
             relative_number: relative_number,
             cursor_style: TextCursorStyle::Block,
             config: config,
+        }
+    }
+
+    pub(super) fn split(&self, view_id: usize) -> TextView {
+        let view = &self.views[self.cur_view_idx];
+        let buffer = view.buffer.clone();
+        let cursor = {
+            let borrow = &mut *buffer.borrow_mut();
+            let pos = borrow.get_pos_at_line(0);
+            borrow.add_cursor_at_pos(view_id, &pos, false)
+        };
+        let views = vec![View {
+            xbase: 0,
+            ybase: 0,
+            start_line: 0,
+            line_numbers: view.line_numbers,
+            relative_number: view.relative_number,
+            buffer: buffer,
+            cursor: cursor,
+        }];
+        TextView {
+            views: views,
+            cur_view_idx: 0,
+            rect: self.rect,
+            scroll_v: (0.0, 0.0),
+            font_core: self.font_core.clone(),
+            dpi: self.dpi,
+            line_numbers: view.line_numbers,
+            relative_number: view.relative_number,
+            cursor_style: TextCursorStyle::Block,
+            config: self.config.clone(),
         }
     }
 
@@ -91,6 +131,7 @@ impl TextView {
             cursor: cursor,
         });
         self.cur_view_idx += 1;
+        self.scroll_v = (0.0, 0.0);
     }
 
     pub(super) fn write_buffer(&mut self, optpath: Option<&str>) -> Option<IOResult<()>> {
@@ -104,11 +145,13 @@ impl TextView {
         } else {
             self.cur_view_idx -= 1;
         }
+        self.scroll_v = (0.0, 0.0);
         self.snap_to_cursor();
     }
 
     pub(super) fn next_buffer(&mut self) {
         self.cur_view_idx = (self.cur_view_idx + 1) % self.views.len();
+        self.scroll_v = (0.0, 0.0);
         self.snap_to_cursor();
     }
 
@@ -464,7 +507,47 @@ impl TextView {
         self.snap_to_cursor();
     }
 
-    pub(super) fn scroll(&mut self, amts: (i32, i32)) {
+    pub(super) fn scroll(&mut self, force: (f64, f64), time: f64) -> bool {
+        fn apply_friction(v: f64, fv: f64) -> f64 {
+            if v < 0.0 {
+                if v >= -fv {
+                    0.0
+                } else {
+                    v + fv
+                }
+            } else if v > 0.0 {
+                if v <= fv {
+                    0.0
+                } else {
+                    v - fv
+                }
+            } else {
+                0.0
+            }
+        }
+
+        // Apply friction
+        let friction_v = FRICTION_A * time;
+        self.scroll_v.0 = apply_friction(self.scroll_v.0, friction_v);
+        self.scroll_v.1 = apply_friction(self.scroll_v.1, friction_v);
+        // Compute and apply acceleration
+        let a = (force.0 / M, force.1 / M);
+        self.scroll_v.0 += time * a.0;
+        self.scroll_v.1 += time * a.1;
+
+        // Calculate delta
+        fn round_delta(s: f64) -> i32 {
+            if s <= 0.0 {
+                s.floor() as i32
+            } else {
+                s.ceil() as i32
+            }
+        }
+        let amts = (
+            round_delta(time * self.scroll_v.0),
+            round_delta(time * self.scroll_v.1),
+        );
+
         let view = &mut self.views[self.cur_view_idx];
         let buffer = &*view.buffer.borrow();
         let cursor_linum = view.cursor.line_num();
@@ -519,11 +602,17 @@ impl TextView {
             }
             y as u32
         };
+
+        amts.0 != 0 || amts.1 != 0
     }
 
     pub(super) fn set_rect(&mut self, rect: Rect<u32, PixelSize>) {
         self.rect = rect;
         self.snap_to_cursor();
+    }
+
+    pub(super) fn get_rect(&self) -> Rect<u32, PixelSize> {
+        self.rect
     }
 
     pub(super) fn draw(&mut self, actx: &mut ActiveRenderCtx) {

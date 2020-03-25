@@ -18,6 +18,7 @@ use crate::ui::text::ShapedTextLine;
 
 /// A cursor into the buffer. The buffer maintains references to all cursors, so they are
 /// updated on editing the buffer
+#[derive(Clone)]
 pub(crate) struct BufferCursor {
     inner: Rc<RefCell<BufferCursorInner>>,
 }
@@ -36,6 +37,7 @@ impl BufferCursor {
     }
 }
 
+#[derive(Clone)]
 struct BufferCursorInner {
     char_idx: usize,
     line_num: usize,
