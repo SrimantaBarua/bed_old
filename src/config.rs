@@ -195,6 +195,8 @@ pub(crate) struct CfgUiThemeTextview {
     pub(crate) foreground_color: Color,
     pub(crate) cursor_color: Color,
     pub(crate) cursor_text_color: Color,
+    pub(crate) border_width: u32,
+    pub(crate) border_color: Color,
 }
 
 impl Default for CfgUiThemeTextview {
@@ -204,6 +206,8 @@ impl Default for CfgUiThemeTextview {
             foreground_color: Color::new(0, 0, 0, 196),
             cursor_color: Color::new(0, 0, 0, 196),
             cursor_text_color: Color::new(255, 255, 255, 255),
+            border_width: 1,
+            border_color: Color::new(0, 0, 0, 255),
         }
     }
 }
@@ -229,6 +233,11 @@ impl CfgUiThemeTextview {
                 .as_str()
                 .and_then(|s| Color::parse(s))
                 .unwrap_or(bgcol),
+            border_width: yaml["border_width"].as_i64().unwrap_or(1) as u32,
+            border_color: yaml["border_color"]
+                .as_str()
+                .and_then(|s| Color::parse(s))
+                .unwrap_or(Color::new(0, 0, 0, 255)),
         }
     }
 }
