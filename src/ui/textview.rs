@@ -134,6 +134,11 @@ impl TextView {
         self.scroll_v = (0.0, 0.0);
     }
 
+    pub(super) fn reload_buffer(&mut self) -> IOResult<()> {
+        let buffer = &mut *self.views[self.cur_view_idx].buffer.borrow_mut();
+        buffer.reload_from_file(self.dpi)
+    }
+
     pub(super) fn write_buffer(&mut self, optpath: Option<&str>) -> Option<IOResult<()>> {
         let buffer = &mut *self.views[self.cur_view_idx].buffer.borrow_mut();
         buffer.write_to_file(optpath)

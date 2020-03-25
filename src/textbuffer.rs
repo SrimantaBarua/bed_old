@@ -231,7 +231,7 @@ impl Buffer {
                     self.format_lines_from(0, None);
                 })
         } else {
-            unreachable!()
+            Ok(())
         }
     }
 

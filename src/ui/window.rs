@@ -299,6 +299,10 @@ impl Window {
                     self.input_state.mode = InputMode::Normal;
                 }
                 _ => {
+                    self.textview_tree
+                        .active_mut()
+                        .reload_buffer()
+                        .expect("failed to reload buffer");
                     self.prompt.set_active(false);
                     self.input_state.mode = InputMode::Normal;
                 }
