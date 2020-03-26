@@ -620,7 +620,7 @@ impl TextView {
         self.rect
     }
 
-    pub(super) fn draw(&mut self, actx: &mut ActiveRenderCtx) {
+    pub(super) fn draw(&mut self, actx: &mut ActiveRenderCtx, is_active: bool) {
         let cfg = &*self.config.borrow();
         let cfggtr = &cfg.ui.gutter;
         let cfgtheme = cfg.ui.theme();
@@ -648,6 +648,11 @@ impl TextView {
         {
             let mut linum = start_line;
             let mut ctx = actx.get_widget_context(textview_rect, cfgthemetv.background_color);
+            let op = if is_active {
+                100
+            } else {
+                cfgthemetv.inactive_opacity
+            };
             for (ascender, _, height, line, _) in LinumTextIter::new(
                 shaped_linums,
                 shaped_text,
@@ -672,7 +677,7 @@ impl TextView {
                 } else {
                     None
                 };
-                line.draw(&mut ctx, ascender, height, baseline, font_core, cursor);
+                line.draw(&mut ctx, ascender, height, baseline, font_core, cursor, op);
                 pos.y += height;
                 linum += 1;
             }
@@ -688,6 +693,11 @@ impl TextView {
         {
             let mut linum = start_line;
             let mut ctx = actx.get_widget_context(rect, cfgthemegtr.background_color);
+            let op = if is_active {
+                100
+            } else {
+                cfgthemegtr.inactive_opacity
+            };
             if view.line_numbers || view.relative_number {
                 for (ascender, _, height, _, gline) in LinumTextIter::new(
                     shaped_linums,
@@ -708,7 +718,7 @@ impl TextView {
                     if view.line_numbers && view.relative_number && linum == cursor_linum {
                         baseline.x = cfggtr.padding as i32;
                     }
-                    gline.draw(&mut ctx, ascender, height, baseline, font_core, None);
+                    gline.draw(&mut ctx, ascender, height, baseline, font_core, None, op);
                     pos.y += height;
                     linum += 1;
                 }

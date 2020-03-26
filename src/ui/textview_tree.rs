@@ -57,7 +57,7 @@ impl TextViewTree {
             let mut ctx = active_ctx.get_widget_context(rect, bgcol);
             ctx.color_quad(rect, border_color);
         }
-        self.root.draw(active_ctx)
+        self.root.draw(active_ctx, true)
     }
 
     pub(super) fn move_cursor_to_point(&mut self, point: (i32, i32)) {
@@ -304,12 +304,19 @@ impl Node {
         }
     }
 
-    fn draw(&mut self, active_ctx: &mut ActiveRenderCtx) {
+    fn draw(&mut self, active_ctx: &mut ActiveRenderCtx, is_active: bool) {
         match self {
-            Node::Leaf(t) => t.draw(active_ctx),
-            Node::InnerH(v, _, _) | Node::InnerV(v, _, _) => {
-                for i in 0..v.len() {
-                    v[i].draw(active_ctx);
+            Node::Leaf(t) => t.draw(active_ctx, is_active),
+            Node::InnerH(v, _, i) | Node::InnerV(v, _, i) => {
+                for j in 0..v.len() {
+                    v[j].draw(
+                        active_ctx,
+                        if let Some(i) = *i {
+                            j == i && is_active
+                        } else {
+                            false
+                        },
+                    );
                 }
             }
         }

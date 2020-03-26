@@ -34,6 +34,11 @@ impl Color {
         })
     }
 
+    pub(crate) fn opacity(mut self, percentage: u8) -> Color {
+        self.a = ((((self.a as u16) * (percentage as u16)) / 100) & 0xff) as u8;
+        self
+    }
+
     pub(crate) fn to_opengl_color(&self) -> (f32, f32, f32, f32) {
         (
             (self.r as f32) / 255.0,

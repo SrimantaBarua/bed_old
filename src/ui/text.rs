@@ -357,6 +357,7 @@ impl ShapedTextLine {
         mut baseline: Point2D<i32, PixelSize>,
         font_core: &mut FontCore,
         cursor: Option<(usize, TextCursorStyle, Color, Color)>,
+        opacity: u8,
     ) -> Point2D<i32, PixelSize> {
         let mut grapheme = 0;
         let mut block_cursor_width = 10;
@@ -373,9 +374,9 @@ impl ShapedTextLine {
                 if let Some((gidx, style, cursor_color, cursor_text_color)) = cursor {
                     if gidx >= grapheme && gidx < grapheme + cluster.num_graphemes {
                         let glyph_color = if style == TextCursorStyle::Block {
-                            cursor_text_color
+                            cursor_text_color.opacity(opacity)
                         } else {
-                            span.color
+                            span.color.opacity(opacity)
                         };
                         let num_glyphs = cluster.glyph_infos.len();
                         if num_glyphs % cluster.num_graphemes != 0 {
@@ -406,7 +407,7 @@ impl ShapedTextLine {
                             };
                             ctx.color_quad(
                                 Rect::new(point2(cursor_x, cursor_y), cursor_size),
-                                cursor_color,
+                                cursor_color.opacity(opacity),
                             );
                             grapheme += cluster.num_graphemes;
                         } else {
@@ -444,7 +445,7 @@ impl ShapedTextLine {
                                     };
                                     ctx.color_quad(
                                         Rect::new(point2(cursor_x, cursor_y), cursor_size),
-                                        cursor_color,
+                                        cursor_color.opacity(opacity),
                                     );
                                 }
                                 grapheme += 1;
@@ -453,13 +454,14 @@ impl ShapedTextLine {
                         continue;
                     }
                 }
+                let glyph_col = span.color.opacity(opacity);
                 for gi in cluster.glyph_infos {
                     ctx.glyph(
                         baseline + gi.offset,
                         span.face,
                         gi.gid,
                         span.size,
-                        span.color,
+                        glyph_col,
                         span.style,
                         &mut face.raster,
                     );
@@ -481,7 +483,7 @@ impl ShapedTextLine {
                 };
                 ctx.color_quad(
                     Rect::new(point2(baseline.x, cursor_y), cursor_size),
-                    cursor_color,
+                    cursor_color.opacity(opacity),
                 );
             }
         }

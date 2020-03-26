@@ -197,6 +197,7 @@ pub(crate) struct CfgUiThemeTextview {
     pub(crate) cursor_text_color: Color,
     pub(crate) border_width: u32,
     pub(crate) border_color: Color,
+    pub(crate) inactive_opacity: u8,
 }
 
 impl Default for CfgUiThemeTextview {
@@ -208,6 +209,7 @@ impl Default for CfgUiThemeTextview {
             cursor_text_color: Color::new(255, 255, 255, 255),
             border_width: 1,
             border_color: Color::new(0, 0, 0, 255),
+            inactive_opacity: 50,
         }
     }
 }
@@ -238,6 +240,7 @@ impl CfgUiThemeTextview {
                 .as_str()
                 .and_then(|s| Color::parse(s))
                 .unwrap_or(Color::new(0, 0, 0, 255)),
+            inactive_opacity: yaml["inactive_opacity"].as_i64().unwrap_or(50) as u8,
         }
     }
 }
@@ -246,6 +249,7 @@ impl CfgUiThemeTextview {
 pub(crate) struct CfgUiThemeGutter {
     pub(crate) background_color: Color,
     pub(crate) foreground_color: Color,
+    pub(crate) inactive_opacity: u8,
 }
 
 impl Default for CfgUiThemeGutter {
@@ -253,6 +257,7 @@ impl Default for CfgUiThemeGutter {
         CfgUiThemeGutter {
             background_color: Color::new(255, 255, 255, 64),
             foreground_color: Color::new(0, 0, 0, 128),
+            inactive_opacity: 50,
         }
     }
 }
@@ -267,9 +272,11 @@ impl CfgUiThemeGutter {
             .as_str()
             .and_then(|s| Color::parse(s))
             .unwrap_or(Color::new(0, 0, 0, 255));
+        let inop = yaml["inactive_opacity"].as_i64().unwrap_or(50) as u8;
         CfgUiThemeGutter {
             background_color: bgcol,
             foreground_color: fgcol,
+            inactive_opacity: inop,
         }
     }
 }

@@ -118,6 +118,7 @@ impl FuzzyPopup {
             pos,
             font_core,
             None,
+            100,
         );
         pos_here.x += 5;
         let text_padding = pos_here.x;
@@ -135,6 +136,7 @@ impl FuzzyPopup {
                 cfgfztheme.cursor_color,
                 cfgfztheme.foreground_color,
             )),
+            100,
         );
         pos.y -= max(
             self.input_line.metrics.ascender,
@@ -162,6 +164,7 @@ impl FuzzyPopup {
                     pos_here,
                     font_core,
                     None,
+                    100,
                 );
             }
         }

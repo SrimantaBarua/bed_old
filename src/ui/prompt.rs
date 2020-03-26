@@ -101,6 +101,7 @@ impl Prompt {
                 cfgprtheme.cursor_color,
                 cfgprtheme.foreground_color,
             )),
+            100,
         );
     }
 
