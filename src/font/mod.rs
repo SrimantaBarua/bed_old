@@ -52,20 +52,29 @@ impl Face {
 
 struct FaceFamily {
     name: String,
-    faces: FnvHashMap<TextStyle, Face>,
+    // TODO: Keep up to date with TextStyle
+    faces: [Option<Face>; 9],
 }
 
 impl FaceFamily {
     fn empty(name: String) -> FaceFamily {
         FaceFamily {
             name: name,
-            faces: FnvHashMap::default(),
+            faces: [None, None, None, None, None, None, None, None, None],
         }
     }
 
     fn set_face(&mut self, style: TextStyle, face: Face) -> Option<&mut Face> {
-        self.faces.insert(style, face);
-        self.faces.get_mut(&style)
+        self.faces[style.ival() as usize] = Some(face);
+        self.get_face_mut(style)
+    }
+
+    fn get_face_mut(&mut self, style: TextStyle) -> Option<&mut Face> {
+        self.faces[style.ival() as usize].as_mut()
+    }
+
+    fn get_face(&self, style: TextStyle) -> Option<&Face> {
+        self.faces[style.ival() as usize].as_ref()
     }
 }
 
@@ -77,7 +86,7 @@ pub(crate) struct FaceGroup {
 impl FaceGroup {
     fn new(family: String, style: TextStyle, face: Face) -> FaceGroup {
         let mut family = FaceFamily::empty(family);
-        family.faces.insert(style, face);
+        family.faces[style.ival() as usize] = Some(face);
         FaceGroup {
             family: family,
             fallbacks: Vec::new(),
@@ -149,14 +158,14 @@ impl FontCore {
         let default_style = TextStyle::default();
 
         let group = self.key_face_map.get(&base)?;
-        let face = group.family.faces.get(&default_style)?;
+        let face = group.family.get_face(default_style)?;
         if face.raster.has_glyph_for_char(c) {
             return Some(base);
         }
 
         for key in &group.fallbacks {
             let group = self.key_face_map.get(&key)?;
-            let face = group.family.faces.get(&default_style)?;
+            let face = group.family.get_face(default_style)?;
             if face.raster.has_glyph_for_char(c) {
                 return Some(*key);
             }
@@ -195,8 +204,8 @@ impl FontCore {
     ) -> Option<(&mut HbBuffer, &mut Face)> {
         let hb_buffer = &mut self.hb_buffer;
         let group = self.key_face_map.get_mut(&key)?;
-        if group.family.faces.contains_key(&style) {
-            return Some((hb_buffer, group.family.faces.get_mut(&style)?));
+        if group.family.faces[style.ival() as usize].is_some() {
+            return Some((hb_buffer, group.family.get_face_mut(style)?));
         }
         let mut pattern = source::Pattern::new()?;
         if !pattern.set_family(&group.family.name)

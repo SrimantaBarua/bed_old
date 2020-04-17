@@ -69,6 +69,7 @@ impl TextStyle {
         }
     }
 
+    // TODO: Update font::FaceFamily accordingly
     pub(crate) fn ival(&self) -> u8 {
         let ret = match self.weight {
             TextWeight::Medium => 0,
