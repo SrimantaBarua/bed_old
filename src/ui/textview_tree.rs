@@ -47,6 +47,18 @@ impl TextViewTree {
         }
     }
 
+    // Kill the current active pane. Return true if that was the last pane, false
+    // otherwise
+    pub(super) fn kill_active(&mut self) -> bool {
+        if !self.root.kill_active() {
+            let cfg = &*self.config.borrow();
+            let borderwidth = cfg.ui.theme().textview.border_width;
+            self.root.compute_rects(borderwidth);
+            return false;
+        }
+        true
+    }
+
     pub(super) fn draw(&mut self, active_ctx: &mut ActiveRenderCtx) {
         {
             let cfg = &*self.config.borrow();
@@ -75,9 +87,9 @@ impl TextViewTree {
 
     pub(super) fn set_rect(&mut self, rect: Rect<u32, PixelSize>) {
         let cfg = &*self.config.borrow();
-        let bgwidth = cfg.ui.theme().textview.border_width;
+        let borderwidth = cfg.ui.theme().textview.border_width;
         self.rect = rect;
-        self.root.set_rect(rect, bgwidth);
+        self.root.set_rect(rect, borderwidth);
     }
 
     pub(super) fn active_mut(&mut self) -> &mut TextView {
@@ -86,16 +98,16 @@ impl TextViewTree {
 
     pub(super) fn split_h(&mut self, view_id: usize) {
         let cfg = &*self.config.borrow();
-        let bgwidth = cfg.ui.theme().textview.border_width;
+        let borderwidth = cfg.ui.theme().textview.border_width;
         self.root.split_h(view_id);
-        self.root.compute_rects(bgwidth);
+        self.root.compute_rects(borderwidth);
     }
 
     pub(super) fn split_v(&mut self, view_id: usize) {
         let cfg = &*self.config.borrow();
-        let bgwidth = cfg.ui.theme().textview.border_width;
+        let borderwidth = cfg.ui.theme().textview.border_width;
         self.root.split_v(view_id);
-        self.root.compute_rects(bgwidth);
+        self.root.compute_rects(borderwidth);
     }
 }
 
@@ -126,6 +138,22 @@ impl Node {
             relative_number,
             view_id,
         ))
+    }
+
+    fn kill_active(&mut self) -> bool {
+        match self {
+            Node::Leaf(_) => true,
+            Node::InnerH(v, _, i) | Node::InnerV(v, _, i) => {
+                let j = i.unwrap();
+                if v[j].kill_active() {
+                    v.remove(j);
+                }
+                if j > 0 {
+                    *i = Some(j - 1);
+                }
+                v.len() == 0
+            }
+        }
     }
 
     fn split_h(&mut self, view_id: usize) {

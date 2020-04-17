@@ -209,6 +209,9 @@ impl Window {
                 }
                 e => self.handle_event(e),
             }
+            if self.should_close() {
+                break;
+            }
         }
 
         // If any view was scrolled, refresh
@@ -253,9 +256,11 @@ impl Window {
         let mut iter = prompt_s.split_whitespace();
         match iter.next() {
             Some(":q") | Some(":quit") => {
-                self.set_should_close(true);
                 self.prompt.set_active(false);
                 self.input_state.mode = InputMode::Normal;
+                if self.textview_tree.kill_active() {
+                    self.set_should_close(true);
+                }
             }
             Some(":bn") | Some(":bnext") => {
                 self.textview_tree.active_mut().next_buffer();
