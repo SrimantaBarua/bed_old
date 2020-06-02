@@ -1,5 +1,7 @@
 # Barua's editor
 
+Deprecated. Rewrite is here - https://github.com/SrimantaBarua/bed.
+
 A not-very-hackable text editor that I am writing for my personal use.
 
 Current features -
